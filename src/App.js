@@ -6,6 +6,7 @@ import { auth, db, functions, firebaseConfig } from './firebaseConfig';
 import { AuthProvider, useAuth } from './AuthContext';
 import WelcomePage from './WelcomePage';
 import CreatorProfile from './CreatorProfile';
+import BlockBlast from './games/BlockBlast';
 
 // --- CONFIGURATION SETUP ---
 // NOTE: Global variables (__app_id, etc.) are used here for compatibility 
@@ -65,6 +66,7 @@ const MainApp = () => {
   const [user, setUser] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [view, setView] = useState('minigame'); // 'minigame', 'leaderboard', 'creatorhub', 'creatorprofile'
+  const [selectedGame, setSelectedGame] = useState('reaction'); // 'reaction' or 'blockblast'
   const [playerPoints, setPlayerPoints] = useState(0); // Points earned this cycle
   const [creators, setCreators] = useState([]); // Leaderboard data
   const [selectedCreator, setSelectedCreator] = useState(null); // User's daily pick
@@ -292,8 +294,55 @@ const MainApp = () => {
   }, [reactionTestState, user, view, startReactionTest, selectedCreator, gameSessionId, gameStartTime, creators, isGuest]); // Added dependencies
 
 
+  // Handle Block Blast game win
+  const handleBlockBlastWin = useCallback(async (finalScore) => {
+    if (isGuest || !user || !selectedCreator) return;
+
+    try {
+      const startGameSession = httpsCallable(functions, 'startGameSession');
+      const sessionResult = await startGameSession({
+        gameType: 'blockBlast',
+        difficulty: 'standard'
+      });
+
+      const submitGameResult = httpsCallable(functions, 'submitGameResult');
+      await submitGameResult({
+        sessionId: sessionResult.data.sessionId,
+        timeTaken: 0
+      });
+
+      setProfileStatus(`Success! +1 point for ${creators.find(c => c.id === selectedCreator)?.name || 'creator'}!`);
+    } catch (error) {
+      console.error('Error submitting Block Blast result:', error.message);
+      setProfileStatus(`Error: ${error.message}`);
+    }
+  }, [user, selectedCreator, creators, isGuest]);
+
   const miniGameContent = useMemo(() => {
-    // Helper function to check for a win state (reaction time is valid and < 500ms)
+    if (selectedGame === 'blockblast') {
+      return (
+        <div className="space-y-6">
+          {/* Game Selector */}
+          <div className="flex justify-center space-x-4">
+            <button
+              onClick={() => setSelectedGame('reaction')}
+              className="px-6 py-3 rounded-lg font-semibold transition-all bg-gray-700 text-gray-300 hover:bg-gray-600"
+            >
+              🎯 Reaction Test
+            </button>
+            <button
+              onClick={() => setSelectedGame('blockblast')}
+              className="px-6 py-3 rounded-lg font-semibold transition-all bg-purple-600 text-white shadow-lg scale-105"
+            >
+              🧩 Block Blast
+            </button>
+          </div>
+          <BlockBlast onGameWin={handleBlockBlastWin} isGuest={isGuest} />
+        </div>
+      );
+    }
+
+    // Reaction Test Game (default)
     const timeValue = reactionTime && reactionTime !== 'Too Early!' ? parseInt(reactionTime) : Infinity;
     const isWin = timeValue < 500;
 
@@ -335,11 +384,29 @@ const MainApp = () => {
     }
 
     return (
-      <div id="reaction-box" className={boxClass} onClick={handleReactionClick}>
-        {message}
+      <div className="space-y-6">
+        {/* Game Selector */}
+        <div className="flex justify-center space-x-4">
+          <button
+            onClick={() => setSelectedGame('reaction')}
+            className="px-6 py-3 rounded-lg font-semibold transition-all bg-purple-600 text-white shadow-lg scale-105"
+          >
+            🎯 Reaction Test
+          </button>
+          <button
+            onClick={() => setSelectedGame('blockblast')}
+            className="px-6 py-3 rounded-lg font-semibold transition-all bg-gray-700 text-gray-300 hover:bg-gray-600"
+          >
+            🧩 Block Blast
+          </button>
+        </div>
+        
+        <div id="reaction-box" className={boxClass} onClick={handleReactionClick}>
+          {message}
+        </div>
       </div>
     );
-  }, [reactionTestState, reactionTime, startReactionTest, handleReactionClick]); // Added handleReactionClick dependency to fix ESLint warning
+  }, [selectedGame, reactionTestState, reactionTime, startReactionTest, handleReactionClick, handleBlockBlastWin, isGuest]); // Added dependencies
 
   // --- CREATOR HUB LOGIC ---
 
