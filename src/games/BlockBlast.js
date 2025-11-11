@@ -35,8 +35,11 @@ const BlockBlast = ({ onGameWin, isGuest }) => {
   const [score, setScore] = useState(0);
   const [currentBlocks, setCurrentBlocks] = useState([]);
   const [selectedBlock, setSelectedBlock] = useState(null);
+  const [draggedBlock, setDraggedBlock] = useState(null);
+  const [dragPosition, setDragPosition] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [gameOver, setGameOver] = useState(false);
-  const [hoveredCell, setHoveredCell] = useState(null);
+  const [hasWon, setHasWon] = useState(false);
 
   // Generate 3 random blocks
   const generateBlocks = useCallback(() => {
@@ -126,8 +129,9 @@ const BlockBlast = ({ onGameWin, isGuest }) => {
     const newScore = score + blockScore + clearBonus;
     setScore(newScore);
 
-    // Check for win condition (score >= 100)
-    if (newScore >= 100 && onGameWin) {
+    // Check for win condition (score >= 100) - only award once
+    if (newScore >= 100 && !hasWon && onGameWin) {
+      setHasWon(true);
       onGameWin(newScore);
     }
 
@@ -156,16 +160,106 @@ const BlockBlast = ({ onGameWin, isGuest }) => {
     }
 
     setSelectedBlock(null);
-  }, [grid, score, currentBlocks, generateBlocks, canPlaceBlock, onGameWin]);
+  }, [grid, score, currentBlocks, generateBlocks, canPlaceBlock, onGameWin, hasWon]);
 
-  // Handle grid cell click
-  const handleCellClick = useCallback((row, col) => {
-    if (!selectedBlock || gameOver) return;
-    
-    if (canPlaceBlock(selectedBlock, row, col)) {
-      placeBlock(selectedBlock, row, col);
+  // Handle drag start (touch and mouse)
+  const handleDragStart = useCallback((block, e) => {
+    if (e.cancelable) {
+      e.preventDefault();
     }
-  }, [selectedBlock, gameOver, canPlaceBlock, placeBlock]);
+    setDraggedBlock(block);
+    setSelectedBlock(block);
+    setIsDragging(true);
+    
+    // Set initial drag position
+    const touch = e.touches ? e.touches[0] : e;
+    setDragPosition({ x: touch.clientX, y: touch.clientY });
+  }, []);
+
+  // Add global touch/mouse move and end listeners
+  useEffect(() => {
+    const handleDragEnd = (e) => {
+      if (!draggedBlock) return;
+      
+      const touch = e.changedTouches ? e.changedTouches[0] : e;
+      const gridElement = document.getElementById('block-blast-grid');
+      
+      if (gridElement) {
+        const gridRect = gridElement.getBoundingClientRect();
+        const cellSize = gridRect.width / GRID_SIZE;
+        
+        // Calculate which cell the block was dropped on
+        const relativeX = touch.clientX - gridRect.left;
+        const relativeY = touch.clientY - gridRect.top;
+        
+        if (relativeX >= 0 && relativeX < gridRect.width && relativeY >= 0 && relativeY < gridRect.height) {
+          const col = Math.floor(relativeX / cellSize);
+          const row = Math.floor(relativeY / cellSize);
+          
+          if (canPlaceBlock(draggedBlock, row, col)) {
+            placeBlock(draggedBlock, row, col);
+          }
+        }
+      }
+      
+      setDraggedBlock(null);
+      setDragPosition(null);
+      setIsDragging(false);
+      setSelectedBlock(null);
+    };
+
+    const handleGlobalMove = (e) => {
+      if (isDragging && draggedBlock) {
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+        const touch = e.touches ? e.touches[0] : e;
+        setDragPosition({ x: touch.clientX, y: touch.clientY });
+      }
+    };
+
+    const handleGlobalEnd = (e) => {
+      if (isDragging && draggedBlock) {
+        handleDragEnd(e);
+      }
+    };
+
+    if (isDragging) {
+      document.addEventListener('touchmove', handleGlobalMove, { passive: false });
+      document.addEventListener('touchend', handleGlobalEnd);
+      document.addEventListener('mousemove', handleGlobalMove);
+      document.addEventListener('mouseup', handleGlobalEnd);
+    }
+
+    return () => {
+      document.removeEventListener('touchmove', handleGlobalMove);
+      document.removeEventListener('touchend', handleGlobalEnd);
+      document.removeEventListener('mousemove', handleGlobalMove);
+      document.removeEventListener('mouseup', handleGlobalEnd);
+    };
+  }, [isDragging, draggedBlock, canPlaceBlock, placeBlock]);
+
+  // Get cell under drag position for preview
+  const getDragHoveredCell = useCallback(() => {
+    if (!dragPosition || !isDragging) return null;
+    
+    const gridElement = document.getElementById('block-blast-grid');
+    if (!gridElement) return null;
+    
+    const gridRect = gridElement.getBoundingClientRect();
+    const cellSize = gridRect.width / GRID_SIZE;
+    
+    const relativeX = dragPosition.x - gridRect.left;
+    const relativeY = dragPosition.y - gridRect.top;
+    
+    if (relativeX >= 0 && relativeX < gridRect.width && relativeY >= 0 && relativeY < gridRect.height) {
+      const col = Math.floor(relativeX / cellSize);
+      const row = Math.floor(relativeY / cellSize);
+      return [row, col];
+    }
+    
+    return null;
+  }, [dragPosition, isDragging]);
 
   // Reset game
   const resetGame = () => {
@@ -174,67 +268,70 @@ const BlockBlast = ({ onGameWin, isGuest }) => {
     setCurrentBlocks(generateBlocks());
     setSelectedBlock(null);
     setGameOver(false);
+    setHasWon(false);
   };
 
   // Check if placement is valid when hovering
   const getPreviewGrid = useCallback(() => {
-    if (!selectedBlock || !hoveredCell) return grid;
+    const targetCell = isDragging ? getDragHoveredCell() : null;
+    const blockToPreview = isDragging ? draggedBlock : selectedBlock;
     
-    const [row, col] = hoveredCell;
-    if (!canPlaceBlock(selectedBlock, row, col)) return grid;
+    if (!blockToPreview || !targetCell) return grid;
+    
+    const [row, col] = targetCell;
+    if (!canPlaceBlock(blockToPreview, row, col)) return grid;
 
     const previewGrid = grid.map(r => [...r]);
-    for (let r = 0; r < selectedBlock.shape.length; r++) {
-      for (let c = 0; c < selectedBlock.shape[r].length; c++) {
-        if (selectedBlock.shape[r][c] === 1) {
+    for (let r = 0; r < blockToPreview.shape.length; r++) {
+      for (let c = 0; c < blockToPreview.shape[r].length; c++) {
+        if (blockToPreview.shape[r][c] === 1) {
           previewGrid[row + r][col + c] = 2; // 2 = preview
         }
       }
     }
     return previewGrid;
-  }, [grid, selectedBlock, hoveredCell, canPlaceBlock]);
+  }, [grid, selectedBlock, canPlaceBlock, isDragging, getDragHoveredCell, draggedBlock]);
 
   const previewGrid = getPreviewGrid();
 
   return (
-    <div className="flex flex-col items-center space-y-6 p-4">
-      <div className="text-center space-y-2">
-        <h2 className="text-3xl font-bold text-purple-400">Block Blast</h2>
-        <p className="text-gray-400">Place blocks to clear rows and columns!</p>
-        <div className="flex items-center justify-center space-x-4">
-          <div className="bg-gray-800 px-6 py-3 rounded-lg border border-gray-700">
-            <span className="text-sm text-gray-400">Score: </span>
-            <span className="text-2xl font-bold text-green-400">{score}</span>
+    <div className="flex flex-col items-center space-y-3 md:space-y-6 p-2 md:p-4">
+      <div className="text-center space-y-1 md:space-y-2">
+        <h2 className="text-xl md:text-3xl font-bold text-purple-400">Block Blast</h2>
+        <p className="text-xs md:text-base text-gray-400">Place blocks to clear rows and columns!</p>
+        <div className="flex items-center justify-center space-x-2 md:space-x-4">
+          <div className="bg-gray-800 px-3 py-1.5 md:px-6 md:py-3 rounded-lg border border-gray-700">
+            <span className="text-xs md:text-sm text-gray-400">Score: </span>
+            <span className="text-lg md:text-2xl font-bold text-green-400">{score}</span>
           </div>
-          <div className="bg-gray-800 px-6 py-3 rounded-lg border border-gray-700">
-            <span className="text-sm text-gray-400">Goal: </span>
-            <span className="text-xl font-bold text-yellow-400">100</span>
+          <div className="bg-gray-800 px-3 py-1.5 md:px-6 md:py-3 rounded-lg border border-gray-700">
+            <span className="text-xs md:text-sm text-gray-400">Goal: </span>
+            <span className="text-base md:text-xl font-bold text-yellow-400">100</span>
           </div>
         </div>
       </div>
 
       {/* Game Grid */}
       <div 
-        className="bg-gray-800 p-4 rounded-xl border-2 border-gray-700"
+        id="block-blast-grid"
+        className="bg-gray-800 p-2 md:p-4 rounded-xl border-2 border-gray-700"
         style={{ 
           display: 'grid', 
           gridTemplateColumns: `repeat(${GRID_SIZE}, 40px)`,
-          gap: '2px'
+          gap: '2px',
+          touchAction: 'none'
         }}
       >
         {previewGrid.map((row, rowIndex) =>
           row.map((cell, colIndex) => (
             <div
               key={`${rowIndex}-${colIndex}`}
-              onClick={() => handleCellClick(rowIndex, colIndex)}
-              onMouseEnter={() => setHoveredCell([rowIndex, colIndex])}
-              onMouseLeave={() => setHoveredCell(null)}
-              className={`w-10 h-10 rounded transition-all cursor-pointer ${
+              className={`w-10 h-10 rounded transition-all ${
                 cell === 1 
                   ? 'bg-purple-600 shadow-lg' 
                   : cell === 2 
-                  ? 'bg-green-500 opacity-50'
-                  : 'bg-gray-700 hover:bg-gray-600'
+                  ? 'bg-green-500 opacity-60'
+                  : 'bg-gray-700'
               }`}
             />
           ))
@@ -242,22 +339,24 @@ const BlockBlast = ({ onGameWin, isGuest }) => {
       </div>
 
       {/* Available Blocks */}
-      <div className="space-y-2">
-        <p className="text-center text-gray-400 text-sm">Click a block, then click the grid to place it</p>
-        <div className="flex space-x-4">
+      <div className="space-y-1 md:space-y-2">
+        <p className="text-center text-gray-400 text-xs md:text-sm">Drag blocks onto the grid to place them</p>
+        <div className="flex space-x-2 md:space-x-4 justify-center">
           {currentBlocks.map((block) => (
             <div
               key={block.id}
-              onClick={() => setSelectedBlock(block)}
-              className={`p-3 rounded-lg cursor-pointer transition-all ${
-                selectedBlock?.id === block.id 
-                  ? 'bg-blue-600 shadow-xl scale-110' 
-                  : 'bg-gray-800 hover:bg-gray-700 border border-gray-600'
+              onTouchStart={(e) => handleDragStart(block, e)}
+              onMouseDown={(e) => handleDragStart(block, e)}
+              className={`p-2 md:p-3 rounded-lg cursor-grab active:cursor-grabbing transition-all touch-none select-none ${
+                draggedBlock?.id === block.id 
+                  ? 'opacity-30 scale-95' 
+                  : 'bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:scale-105'
               }`}
               style={{
                 display: 'grid',
                 gridTemplateColumns: `repeat(${block.shape[0].length}, 20px)`,
-                gap: '2px'
+                gap: '2px',
+                touchAction: 'none'
               }}
             >
               {block.shape.map((row, r) =>
@@ -277,12 +376,12 @@ const BlockBlast = ({ onGameWin, isGuest }) => {
 
       {/* Game Over / Win Message */}
       {gameOver && (
-        <div className="bg-red-900/50 border-2 border-red-600 p-6 rounded-xl text-center">
-          <p className="text-2xl font-bold text-red-400 mb-2">Game Over!</p>
-          <p className="text-gray-300 mb-4">Final Score: {score}</p>
+        <div className="bg-red-900/50 border-2 border-red-600 p-4 md:p-6 rounded-xl text-center">
+          <p className="text-xl md:text-2xl font-bold text-red-400 mb-1 md:mb-2">Game Over!</p>
+          <p className="text-sm md:text-base text-gray-300 mb-3 md:mb-4">Final Score: {score}</p>
           <button
             onClick={resetGame}
-            className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors"
+            className="px-4 py-2 md:px-6 md:py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors text-sm md:text-base"
           >
             Play Again
           </button>
@@ -290,16 +389,42 @@ const BlockBlast = ({ onGameWin, isGuest }) => {
       )}
 
       {score >= 100 && !isGuest && (
-        <div className="bg-green-900/50 border-2 border-green-600 p-6 rounded-xl text-center animate-pulse">
-          <p className="text-2xl font-bold text-green-400">🎉 You Win! 🎉</p>
-          <p className="text-gray-300">You earned 1 Sub Point for your creator!</p>
+        <div className="bg-yellow-900/50 border-2 border-yellow-500 p-4 md:p-6 rounded-xl text-center animate-pulse">
+          <p className="text-xl md:text-2xl font-bold text-yellow-400">🎉 You Win! 🎉</p>
+          <p className="text-sm md:text-base text-gray-300">You earned 5 Sub Points for your creator!</p>
         </div>
       )}
 
       {isGuest && (
-        <p className="text-yellow-400 text-sm text-center">
+        <p className="text-yellow-400 text-xs md:text-sm text-center">
           ⚠️ Guest Mode - Points don&apos;t count. Sign in to earn points!
         </p>
+      )}
+
+      {/* Floating Drag Preview */}
+      {isDragging && draggedBlock && dragPosition && (
+        <div
+          className="fixed pointer-events-none z-50"
+          style={{
+            left: dragPosition.x,
+            top: dragPosition.y,
+            transform: 'translate(-50%, -50%)',
+            display: 'grid',
+            gridTemplateColumns: `repeat(${draggedBlock.shape[0].length}, 24px)`,
+            gap: '2px'
+          }}
+        >
+          {draggedBlock.shape.map((row, r) =>
+            row.map((cell, c) => (
+              <div
+                key={`${r}-${c}`}
+                className={`w-6 h-6 rounded ${
+                  cell === 1 ? 'bg-purple-500 shadow-lg opacity-80' : 'bg-transparent'
+                }`}
+              />
+            ))
+          )}
+        </div>
       )}
     </div>
   );
