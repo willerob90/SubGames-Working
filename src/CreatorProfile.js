@@ -184,6 +184,7 @@ function CreatorProfile() {
   };
 
   const handleRemovePlatform = async (platform) => {
+    // eslint-disable-next-line no-restricted-globals
     if (!confirm(`Remove ${platform} connection?`)) return;
     
     try {
@@ -202,6 +203,7 @@ function CreatorProfile() {
   };
 
   const handleSignOut = async () => {
+    // eslint-disable-next-line no-restricted-globals
     if (!confirm('Are you sure you want to sign out?')) return;
     
     try {

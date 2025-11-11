@@ -3,17 +3,11 @@ import { useAuth } from './AuthContext';
 import './WelcomePage.css';
 
 function WelcomePage({ onContinue }) {
-  const { continueAsGuest, signInWithGoogle, signInWithApple } = useAuth();
+  const { signInWithGoogle, signInWithApple } = useAuth();
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [signingInAs, setSigningInAs] = useState('user'); // 'user' or 'creator'
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const handleGuestMode = () => {
-    console.log('User selected guest mode');
-    continueAsGuest();
-    onContinue();
-  };
 
   const handleSignInClick = (type) => {
     console.log('Opening sign-in modal as:', type);
@@ -61,22 +55,7 @@ function WelcomePage({ onContinue }) {
         </p>
 
         <div className="welcome-options">
-          {/* Option 1: Guest Mode */}
-          <div className="welcome-card">
-            <div className="card-icon">🎮</div>
-            <h2>Play as Guest</h2>
-            <p>Jump right in and play games without signing in</p>
-            <ul className="feature-list">
-              <li>✓ Play all games</li>
-              <li>✓ Browse leaderboards</li>
-              <li>✗ Points don't track to creators</li>
-            </ul>
-            <button onClick={handleGuestMode} className="btn-primary">
-              Continue as Guest
-            </button>
-          </div>
-
-          {/* Option 2: Sign In as User */}
+          {/* Option 1: Sign In as User */}
           <div className="welcome-card">
             <div className="card-icon">👤</div>
             <h2>Sign In as Player</h2>
@@ -94,7 +73,7 @@ function WelcomePage({ onContinue }) {
             </button>
           </div>
 
-          {/* Option 3: Sign In as Creator */}
+          {/* Option 2: Sign In as Creator */}
           <div className="welcome-card featured">
             <div className="card-icon">⭐</div>
             <h2>Sign In as Creator</h2>
