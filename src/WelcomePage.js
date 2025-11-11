@@ -49,48 +49,25 @@ function WelcomePage({ onContinue }) {
   return (
     <div className="welcome-container">
       <div className="welcome-content">
-        <h1 className="welcome-title">Welcome to The Subgames</h1>
-        <p className="welcome-subtitle">
-          Play fun minigames and support your favorite creators!
-        </p>
+        <h1 className="welcome-title">
+          <span className="title-the">The</span>
+          <span className="title-subgames">SubGames</span>
+        </h1>
 
-        <div className="welcome-options">
-          {/* Option 1: Sign In as User */}
-          <div className="welcome-card">
-            <div className="card-icon">👤</div>
-            <h2>Sign In as Player</h2>
-            <p>Create an account to support your favorite creators</p>
-            <ul className="feature-list">
-              <li>✓ Play all games</li>
-              <li>✓ Support creators with your points</li>
-              <li>✓ Track your personal stats</li>
-            </ul>
-            <button 
-              onClick={() => handleSignInClick('user')} 
-              className="btn-primary"
-            >
-              Sign In as Player
-            </button>
-          </div>
+        <div className="welcome-buttons">
+          <button 
+            onClick={() => handleSignInClick('user')} 
+            className="btn-player"
+          >
+            Sign In as Player
+          </button>
 
-          {/* Option 2: Sign In as Creator */}
-          <div className="welcome-card featured">
-            <div className="card-icon">⭐</div>
-            <h2>Sign In as Creator</h2>
-            <p>Are you a content creator? Get your own profile page!</p>
-            <ul className="feature-list">
-              <li>✓ Everything players get</li>
-              <li>✓ Your own creator profile</li>
-              <li>✓ View analytics & referral stats</li>
-              <li>✓ Track your win/loss history</li>
-            </ul>
-            <button 
-              onClick={() => handleSignInClick('creator')} 
-              className="btn-creator"
-            >
-              Sign In as Creator
-            </button>
-          </div>
+          <button 
+            onClick={() => handleSignInClick('creator')} 
+            className="btn-creator"
+          >
+            Sign In as Creator
+          </button>
         </div>
       </div>
 
