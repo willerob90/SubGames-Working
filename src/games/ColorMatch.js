@@ -13,7 +13,6 @@ const ColorMatch = ({ onGameWin, isGuest }) => {
   const [level, setLevel] = useState(1);
   const [gameState, setGameState] = useState('intro'); // intro, showing, player-turn, correct, wrong, won
   const [activeColor, setActiveColor] = useState(null);
-  const [hasWon, setHasWon] = useState(false);
   const audioContext = useRef(null);
 
   // Initialize Web Audio API
@@ -72,7 +71,6 @@ const ColorMatch = ({ onGameWin, isGuest }) => {
     setPlayerSequence([]);
     setLevel(1);
     setGameState('showing');
-    setHasWon(false);
     showSequence(newSequence);
   }, [showSequence]);
 
@@ -103,7 +101,6 @@ const ColorMatch = ({ onGameWin, isGuest }) => {
       if (level === 8) {
         // Player won the game!
         setGameState('won');
-        setHasWon(true);
         if (onGameWin) {
           onGameWin(level);
         }
@@ -128,7 +125,6 @@ const ColorMatch = ({ onGameWin, isGuest }) => {
     setPlayerSequence([]);
     setLevel(1);
     setGameState('intro');
-    setHasWon(false);
   };
 
   return (
