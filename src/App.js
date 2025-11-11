@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from './AuthContext';
 import WelcomePage from './WelcomePage';
 import CreatorProfile from './CreatorProfile';
 import BlockBlast from './games/BlockBlast';
+import ColorMatch from './games/ColorMatch';
 
 // --- CONFIGURATION SETUP ---
 // NOTE: Global variables (__app_id, etc.) are used here for compatibility 
@@ -66,7 +67,7 @@ const MainApp = () => {
   const [user, setUser] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [view, setView] = useState('minigame'); // 'minigame', 'leaderboard', 'creatorhub', 'creatorprofile'
-  const [selectedGame, setSelectedGame] = useState('reaction'); // 'reaction' or 'blockblast'
+  const [selectedGame, setSelectedGame] = useState('reaction'); // 'reaction', 'blockblast', 'colormatch', 'numbersmasher', 'memorycards', 'wordscramble'
   const [playerPoints, setPlayerPoints] = useState(0); // Points earned this cycle
   const [creators, setCreators] = useState([]); // Leaderboard data
   const [selectedCreator, setSelectedCreator] = useState(null); // User's daily pick
@@ -318,31 +319,154 @@ const MainApp = () => {
     }
   }, [user, selectedCreator, creators, isGuest]);
 
+  const handleColorMatchWin = useCallback(async () => {
+    if (isGuest || !user || !selectedCreator) return;
+
+    try {
+      const startGameSession = httpsCallable(functions, 'startGameSession');
+      const sessionResult = await startGameSession({
+        gameType: 'colorMatch',
+        difficulty: 'standard'
+      });
+
+      const submitGameResult = httpsCallable(functions, 'submitGameResult');
+      await submitGameResult({
+        sessionId: sessionResult.data.sessionId,
+        timeTaken: 0
+      });
+
+      setProfileStatus(`Success! +8 points for ${creators.find(c => c.id === selectedCreator)?.name || 'creator'}!`);
+    } catch (error) {
+      console.error('Error submitting Color Match result:', error.message);
+      setProfileStatus(`Error: ${error.message}`);
+    }
+  }, [user, selectedCreator, creators, isGuest]);
+
   const miniGameContent = useMemo(() => {
+    // Define all games with their metadata
+    const games = [
+      { 
+        id: 'reaction', 
+        name: 'Reaction Test', 
+        icon: '⚡', 
+        description: 'Test your reflexes', 
+        color: 'bg-gradient-to-br from-blue-500 to-blue-700',
+        points: '1 point'
+      },
+      { 
+        id: 'blockblast', 
+        name: 'Block Blast', 
+        icon: '🧩', 
+        description: 'Clear rows and columns', 
+        color: 'bg-gradient-to-br from-purple-500 to-purple-700',
+        points: '5 points'
+      },
+      { 
+        id: 'colormatch', 
+        name: 'Color Match', 
+        icon: '🎨', 
+        description: 'Remember the sequence', 
+        color: 'bg-gradient-to-br from-pink-500 to-pink-700',
+        points: '8 points'
+      },
+      { 
+        id: 'numbersmasher', 
+        name: 'Number Smasher', 
+        icon: '🔢', 
+        description: 'Tap numbers in order', 
+        color: 'bg-gradient-to-br from-green-500 to-green-700',
+        comingSoon: true,
+        points: '1 point'
+      },
+      { 
+        id: 'memorycards', 
+        name: 'Memory Cards', 
+        icon: '🃏', 
+        description: 'Match all the pairs', 
+        color: 'bg-gradient-to-br from-yellow-500 to-orange-600',
+        comingSoon: true,
+        points: '3 points'
+      },
+      { 
+        id: 'wordscramble', 
+        name: 'Word Scramble', 
+        icon: '📝', 
+        description: 'Unscramble the word', 
+        color: 'bg-gradient-to-br from-red-500 to-red-700',
+        comingSoon: true,
+        points: '2 points'
+      }
+    ];
+
+    // If a specific game is selected, show back button + game
     if (selectedGame === 'blockblast') {
       return (
         <div className="space-y-6">
-          {/* Game Selector */}
-          <div className="flex justify-center space-x-4">
-            <button
-              onClick={() => setSelectedGame('reaction')}
-              className="px-6 py-3 rounded-lg font-semibold transition-all bg-gray-700 text-gray-300 hover:bg-gray-600"
-            >
-              🎯 Reaction Test
-            </button>
-            <button
-              onClick={() => setSelectedGame('blockblast')}
-              className="px-6 py-3 rounded-lg font-semibold transition-all bg-purple-600 text-white shadow-lg scale-105"
-            >
-              🧩 Block Blast
-            </button>
-          </div>
+          <button
+            onClick={() => setSelectedGame(null)}
+            className="px-6 py-3 rounded-lg font-semibold transition-all bg-gray-700 text-gray-300 hover:bg-gray-600"
+          >
+            ← Back to Games
+          </button>
           <BlockBlast onGameWin={handleBlockBlastWin} isGuest={isGuest} />
         </div>
       );
     }
 
-    // Reaction Test Game (default)
+    if (selectedGame === 'colormatch') {
+      return (
+        <div className="space-y-6">
+          <button
+            onClick={() => setSelectedGame(null)}
+            className="px-6 py-3 rounded-lg font-semibold transition-all bg-gray-700 text-gray-300 hover:bg-gray-600"
+          >
+            ← Back to Games
+          </button>
+          <ColorMatch onWin={handleColorMatchWin} />
+        </div>
+      );
+    }
+
+    // If selectedGame is null or 'reaction', show the game grid selector
+    if (!selectedGame || selectedGame === 'reaction') {
+      return (
+        <div className="space-y-6">
+          <h2 className="text-2xl md:text-3xl font-bold text-center text-white">Choose Your Game</h2>
+          
+          {/* Game Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            {games.map((game) => (
+              <button
+                key={game.id}
+                onClick={() => !game.comingSoon && setSelectedGame(game.id)}
+                disabled={game.comingSoon}
+                className={`
+                  relative p-6 rounded-2xl shadow-lg transition-all duration-300
+                  ${game.comingSoon 
+                    ? 'opacity-60 cursor-not-allowed' 
+                    : 'hover:scale-105 hover:shadow-2xl cursor-pointer'
+                  }
+                  ${game.color}
+                  text-white
+                `}
+              >
+                {game.comingSoon && (
+                  <div className="absolute top-2 right-2 bg-yellow-400 text-black text-xs font-bold px-2 py-1 rounded-full">
+                    COMING SOON
+                  </div>
+                )}
+                <div className="text-5xl mb-3">{game.icon}</div>
+                <h3 className="text-xl font-bold mb-2">{game.name}</h3>
+                <p className="text-sm opacity-90 mb-3">{game.description}</p>
+                <div className="text-xs opacity-75 font-semibold">Earn: {game.points}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Reaction Test Game
     const timeValue = reactionTime && reactionTime !== 'Too Early!' ? parseInt(reactionTime) : Infinity;
     const isWin = timeValue < 500;
 
@@ -385,28 +509,19 @@ const MainApp = () => {
 
     return (
       <div className="space-y-6">
-        {/* Game Selector */}
-        <div className="flex justify-center space-x-4">
-          <button
-            onClick={() => setSelectedGame('reaction')}
-            className="px-6 py-3 rounded-lg font-semibold transition-all bg-purple-600 text-white shadow-lg scale-105"
-          >
-            🎯 Reaction Test
-          </button>
-          <button
-            onClick={() => setSelectedGame('blockblast')}
-            className="px-6 py-3 rounded-lg font-semibold transition-all bg-gray-700 text-gray-300 hover:bg-gray-600"
-          >
-            🧩 Block Blast
-          </button>
-        </div>
+        <button
+          onClick={() => setSelectedGame(null)}
+          className="px-6 py-3 rounded-lg font-semibold transition-all bg-gray-700 text-gray-300 hover:bg-gray-600"
+        >
+          ← Back to Games
+        </button>
         
         <div id="reaction-box" className={boxClass} onClick={handleReactionClick}>
           {message}
         </div>
       </div>
     );
-  }, [selectedGame, reactionTestState, reactionTime, startReactionTest, handleReactionClick, handleBlockBlastWin, isGuest]); // Added dependencies
+  }, [selectedGame, reactionTestState, reactionTime, startReactionTest, handleReactionClick, handleBlockBlastWin, handleColorMatchWin, isGuest]); // Added dependencies
 
   // --- CREATOR HUB LOGIC ---
 
