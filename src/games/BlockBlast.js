@@ -30,7 +30,7 @@ const BLOCK_SHAPES = [
   [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
 ];
 
-const BlockBlast = ({ onGameWin, isGuest }) => {
+const BlockBlast = ({ onGameWin }) => {
   const [grid, setGrid] = useState(() => Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(0)));
   const [score, setScore] = useState(0);
   const [currentBlocks, setCurrentBlocks] = useState([]);
@@ -388,17 +388,11 @@ const BlockBlast = ({ onGameWin, isGuest }) => {
         </div>
       )}
 
-      {score >= 100 && !isGuest && (
+      {score >= 100 && (
         <div className="bg-yellow-900/50 border-2 border-yellow-500 p-4 md:p-6 rounded-xl text-center animate-pulse">
           <p className="text-xl md:text-2xl font-bold text-yellow-400">🎉 You Win! 🎉</p>
           <p className="text-sm md:text-base text-gray-300">You earned 5 Sub Points for your creator!</p>
         </div>
-      )}
-
-      {isGuest && (
-        <p className="text-yellow-400 text-xs md:text-sm text-center">
-          ⚠️ Guest Mode - Points don&apos;t count. Sign in to earn points!
-        </p>
       )}
 
       {/* Floating Drag Preview */}

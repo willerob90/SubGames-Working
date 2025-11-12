@@ -16,29 +16,36 @@ const getCycleId = (daysAgo = 0) => {
 
 // Function 1: Start Game Session (Anti-cheat)
 exports.startGameSession = functions.https.onCall(async (data, context) => {
-  // Allow both authenticated and guest users
-  const userId = context.auth ? context.auth.uid : null;
-  const isGuest = !context.auth;
+  // Require authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in to start a game session.');
+  }
   
+  const userId = context.auth.uid;
   const { gameType, difficulty } = data;
   
   const sessionRef = db.collection('gameSessions').doc();
   await sessionRef.set({
-    userId: userId || 'guest',
-    isGuest,
+    userId,
     gameType,
     difficulty: difficulty || 'easy',
     startTime: admin.firestore.FieldValue.serverTimestamp(),
     used: false,
     expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
-    expectedPointValue: isGuest ? 0 : 1 // Guests don't earn points
+    expectedPointValue: 1
   });
   
-  return { sessionId: sessionRef.id, isGuest };
+  return { sessionId: sessionRef.id };
 });
 
 // Function 2: Submit Game Result (Validate & Award Points)
 exports.submitGameResult = functions.https.onCall(async (data, context) => {
+  // Require authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in to submit game results.');
+  }
+  
+  const userId = context.auth.uid;
   const { sessionId, timeTaken } = data;
   
   // Validate session
@@ -53,32 +60,6 @@ exports.submitGameResult = functions.https.onCall(async (data, context) => {
   if (session.used) {
     throw new functions.https.HttpsError('already-exists', 'Session already used');
   }
-  
-  // If this is a guest session, just mark as used and return
-  if (session.isGuest) {
-    await sessionDoc.ref.update({ used: true });
-    
-    // Record guest result (no points awarded)
-    await db.collection('gameResults').add({
-      userId: 'guest',
-      sessionId,
-      gameType: session.gameType,
-      pointsAwarded: 0,
-      timeTaken,
-      completedAt: admin.firestore.FieldValue.serverTimestamp(),
-      validated: true,
-      isGuest: true
-    });
-    
-    return { success: true, pointsAwarded: 0, isGuest: true };
-  }
-  
-  // For authenticated users, validate auth
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
-  }
-  
-  const userId = context.auth.uid;
   
   if (session.userId !== userId) {
     throw new functions.https.HttpsError('permission-denied', 'Not your session');
@@ -358,9 +339,8 @@ exports.trackReferralClick = functions.https.onCall(async (data, context) => {
     // Log the referral event
     await db.collection('referralClicks').add({
       creatorId,
-      clickedBy: context.auth ? context.auth.uid : 'guest',
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      isGuest: !context.auth
+      clickedBy: context.auth ? context.auth.uid : 'anonymous',
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
     });
     
     return { success: true };

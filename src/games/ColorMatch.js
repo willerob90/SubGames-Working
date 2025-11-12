@@ -7,7 +7,7 @@ const COLORS = [
   { id: 'yellow', bg: 'bg-yellow-500', hover: 'hover:bg-yellow-400', active: 'bg-yellow-300', sound: 659.25 },
 ];
 
-const ColorMatch = ({ onGameWin, isGuest }) => {
+const ColorMatch = ({ onGameWin }) => {
   const [sequence, setSequence] = useState([]);
   const [playerSequence, setPlayerSequence] = useState([]);
   const [level, setLevel] = useState(1);
@@ -189,8 +189,7 @@ const ColorMatch = ({ onGameWin, isGuest }) => {
       {gameState === 'won' && (
         <div className="bg-yellow-900/50 border-2 border-yellow-500 p-4 md:p-6 rounded-xl text-center animate-pulse">
           <p className="text-xl md:text-2xl font-bold text-yellow-400 mb-1 md:mb-2">🎉 You Win! 🎉</p>
-          {!isGuest && <p className="text-sm md:text-base text-gray-300">You earned 8 Sub Points for your creator!</p>}
-          {isGuest && <p className="text-sm md:text-base text-yellow-300">Guest mode - Sign in to earn points!</p>}
+          <p className="text-sm md:text-base text-gray-300">You earned 8 Sub Points for your creator!</p>
           <button
             onClick={resetGame}
             className="mt-3 md:mt-4 px-4 py-2 md:px-6 md:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors text-sm md:text-base"
@@ -220,12 +219,6 @@ const ColorMatch = ({ onGameWin, isGuest }) => {
             />
           ))}
         </div>
-      )}
-
-      {isGuest && gameState !== 'intro' && (
-        <p className="text-yellow-400 text-xs md:text-sm text-center">
-          ⚠️ Guest Mode - Points don&apos;t count. Sign in to earn points!
-        </p>
       )}
     </div>
   );

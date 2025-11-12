@@ -63,7 +63,7 @@ const getCycleLeaderboardRef = (db, cycleId, creatorId) => {
 // --- MAIN REACT COMPONENT ---
 
 const MainApp = () => {
-  const { userProfile, isGuest } = useAuth();
+  const { userProfile } = useAuth();
   const [user, setUser] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [view, setView] = useState('minigame'); // 'minigame', 'leaderboard', 'creatorhub', 'creatorprofile'
@@ -129,8 +129,8 @@ const MainApp = () => {
 
   // 2. CYCLE PICK DATA LISTENER (User's current pick and points earned this cycle)
   useEffect(() => {
-    // Skip for guest mode or if not authenticated
-    if (!user || !isAuthReady || isGuest) {
+    // Skip if not authenticated
+    if (!user || !isAuthReady) {
       setPlayerPoints(0);
       setSelectedCreator(null);
       return;
@@ -151,7 +151,7 @@ const MainApp = () => {
     });
 
     return unsubscribe;
-  }, [user, isAuthReady, currentCycleId, isGuest]); // Track cycle changes and guest mode
+  }, [user, isAuthReady, currentCycleId]);
 
   // 3. CREATOR/LEADERBOARD DATA LISTENER (Cycle-based)
   useEffect(() => {
@@ -204,7 +204,7 @@ const MainApp = () => {
   // 4. LOAD YESTERDAY'S WINNER AND CHECK PITY POINTS
   useEffect(() => {
     const loadWinnerAndPityPoints = async () => {
-      if (!db || !isAuthReady || isGuest) return;
+      if (!db || !isAuthReady) return;
 
       try {
         // Calculate yesterday's cycle ID
@@ -240,14 +240,13 @@ const MainApp = () => {
     };
 
     loadWinnerAndPityPoints();
-  }, [isAuthReady, user, isGuest, currentCycleId]);
+  }, [isAuthReady, user, currentCycleId]);
 
   // --- MINIGAME LOGIC (Reaction Test) ---
 
 
   const startReactionTest = useCallback(() => {
-    // For guest mode, allow playing without a creator pick
-    if (!isGuest && (!user || !selectedCreator)) {
+    if (!user || !selectedCreator) {
       setProfileStatus('Please pick a creator first before playing!');
       return;
     }
@@ -275,7 +274,7 @@ const MainApp = () => {
       console.error('Error starting game session:', error.message);
       // Don't show error to user - they're already playing
     });
-  }, [user, selectedCreator, isGuest]);
+  }, [user, selectedCreator]);
 
   const handleReactionClick = useCallback(async () => {
     if (view !== 'minigame') return;
@@ -293,11 +292,6 @@ const MainApp = () => {
       setReactionTestState('result');
 
       if (timeElapsed < 500) {
-        // For guest mode, skip point tracking
-        if (isGuest) {
-          return;
-        }
-
         if (!user || !gameSessionId || !selectedCreator) {
           setProfileStatus('Please pick a creator first before playing!');
           return;
@@ -311,7 +305,7 @@ const MainApp = () => {
             timeTaken: timeElapsed
           });
           
-          if (result.data.success && !result.data.guestMode) {
+          if (result.data.success) {
             setProfileStatus(`Success! +${result.data.pointsAwarded} points for ${creators.find(c => c.id === result.data.creatorId)?.name || 'creator'}!`);
           } else if (!result.data.success) {
             setProfileStatus('Error: Failed to submit game result');
@@ -327,14 +321,13 @@ const MainApp = () => {
     if (reactionTestState === 'initial' || reactionTestState === 'result') {
       startReactionTest();
     }
-  }, [reactionTestState, user, view, startReactionTest, selectedCreator, gameSessionId, gameStartTime, creators, isGuest]); // Added dependencies
+  }, [reactionTestState, user, view, startReactionTest, selectedCreator, gameSessionId, gameStartTime, creators]);
 
 
   // Handle Block Blast game win
   const handleBlockBlastWin = useCallback(async (finalScore) => {
-    if (isGuest || !user || !selectedCreator) {
+    if (!user || !selectedCreator) {
       console.log('Cannot award points - missing requirements:', { 
-        isGuest, 
         hasUser: !!user, 
         hasCreator: !!selectedCreator
       });
@@ -371,13 +364,12 @@ const MainApp = () => {
       console.error('Error submitting Block Blast result:', error);
       setProfileStatus(`Error: ${error.message}`);
     }
-  }, [user, selectedCreator, creators, isGuest]);
+  }, [user, selectedCreator, creators]);
 
   // Handle Color Match game win
   const handleColorMatchWin = useCallback(async (level) => {
-    if (isGuest || !user || !selectedCreator) {
+    if (!user || !selectedCreator) {
       console.log('Cannot award points - missing requirements:', { 
-        isGuest, 
         hasUser: !!user, 
         hasCreator: !!selectedCreator
       });
@@ -414,7 +406,7 @@ const MainApp = () => {
       console.error('Error submitting Color Match result:', error);
       setProfileStatus(`Error: ${error.message}`);
     }
-  }, [user, selectedCreator, creators, isGuest]);
+  }, [user, selectedCreator, creators]);
 
   const miniGameContent = useMemo(() => {
     // If a game is selected, show the game
@@ -427,7 +419,7 @@ const MainApp = () => {
           >
             ← Back to Games
           </button>
-          <BlockBlast onGameWin={handleBlockBlastWin} isGuest={isGuest} />
+          <BlockBlast onGameWin={handleBlockBlastWin} />
         </div>
       );
     }
@@ -441,7 +433,7 @@ const MainApp = () => {
           >
             ← Back to Games
           </button>
-          <ColorMatch onGameWin={handleColorMatchWin} isGuest={isGuest} />
+          <ColorMatch onGameWin={handleColorMatchWin} />
         </div>
       );
     }
@@ -570,7 +562,7 @@ const MainApp = () => {
           ))}
         </div>
 
-        {!selectedCreator && !isGuest && (
+        {!selectedCreator && (
           <div className="bg-yellow-500/20 backdrop-blur-sm border border-yellow-400/30 rounded-lg p-4 text-center">
             <p className="text-yellow-100 text-sm md:text-base">
               💡 Pick a creator from the Leaderboard to start earning points!
@@ -579,7 +571,7 @@ const MainApp = () => {
         )}
       </div>
     );
-  }, [selectedGame, reactionTestState, reactionTime, startReactionTest, handleReactionClick, handleBlockBlastWin, handleColorMatchWin, isGuest, selectedCreator]);
+  }, [selectedGame, reactionTestState, reactionTime, startReactionTest, handleReactionClick, handleBlockBlastWin, handleColorMatchWin, selectedCreator]);
 
   // --- CREATOR HUB LOGIC ---
 
@@ -676,7 +668,7 @@ const MainApp = () => {
       )}
 
       {/* Admin Test Button - Calculate Winner Manually */}
-      {!isGuest && (
+      {user && (
         <div className="mt-8 bg-yellow-500/20 backdrop-blur-sm p-6 rounded-xl border-2 border-yellow-500/50">
           <h3 className="text-lg font-semibold text-yellow-300 mb-2">⚠️ Admin Test Function</h3>
           <p className="text-white/80 text-sm mb-4">
@@ -711,11 +703,6 @@ const MainApp = () => {
   // --- LEADERBOARD LOGIC ---
 
   const handlePickCreator = useCallback(async (creatorId) => {
-    if (isGuest) {
-      setProfileStatus("Guest users cannot pick creators. Please sign in to support creators!");
-      return;
-    }
-    
     if (!user) {
       setProfileStatus("Please sign in to pick a creator.");
       return;
@@ -766,7 +753,7 @@ const MainApp = () => {
       console.error('Error picking creator:', error);
       setProfileStatus(`Error: ${error.message}`);
     }
-  }, [user, creators, currentCycleId, isGuest]);
+  }, [user, creators, currentCycleId]);
 
   const leaderboardContent = (
     <div className="p-2 md:p-4 space-y-4 md:space-y-6">
@@ -880,7 +867,7 @@ const MainApp = () => {
   };
 
   const handleClickWinnerLink = async () => {
-    if (isGuest || !cycleWinner || !cycleWinner.promotionalURL) return;
+    if (!cycleWinner || !cycleWinner.promotionalURL) return;
 
     try {
       // Calculate yesterday's cycle ID
@@ -921,20 +908,14 @@ const MainApp = () => {
             <span className="bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent" style={{letterSpacing: '-0.02em'}}>SubGames</span>
           </h1>
           <div className="flex items-center space-x-2 md:space-x-4">
-            {isGuest ? (
-              <span className="text-xs md:text-sm text-gray-400 italic">Guest Mode</span>
-            ) : (
-              <>
-                <span className="text-lg md:text-xl font-bold text-gray-100 bg-gradient-to-br from-yellow-500 to-yellow-600 px-3 py-1.5 md:px-4 md:py-2 rounded-full shadow-lg flex items-center gap-1 md:gap-2">
-                  <span className="text-xl md:text-2xl">🪙</span>
-                  <span>{playerPoints}</span>
-                </span>
-                {selectedCreator && (
-                  <span className="text-xs md:text-sm text-white bg-white/20 backdrop-blur-sm px-2 py-1 md:p-2 rounded-lg truncate max-w-[100px] md:max-w-none">
-                    <span className="hidden md:inline">Supporting: </span>{creators.find(c => c.id === selectedCreator)?.name || 'Creator'}
-                  </span>
-                )}
-              </>
+            <span className="text-lg md:text-xl font-bold text-gray-100 bg-gradient-to-br from-yellow-500 to-yellow-600 px-3 py-1.5 md:px-4 md:py-2 rounded-full shadow-lg flex items-center gap-1 md:gap-2">
+              <span className="text-xl md:text-2xl">🪙</span>
+              <span>{playerPoints}</span>
+            </span>
+            {selectedCreator && (
+              <span className="text-xs md:text-sm text-white bg-white/20 backdrop-blur-sm px-2 py-1 md:p-2 rounded-lg truncate max-w-[100px] md:max-w-none">
+                <span className="hidden md:inline">Supporting: </span>{creators.find(c => c.id === selectedCreator)?.name || 'Creator'}
+              </span>
             )}
           </div>
         </div>
@@ -943,7 +924,7 @@ const MainApp = () => {
       {/* Main Content Area */}
       <main className="flex-1 max-w-4xl mx-auto w-full p-2 md:p-4">
         {/* Winner Announcement */}
-        {cycleWinner && cycleWinner.promotionalURL && !isGuest && (
+        {cycleWinner && cycleWinner.promotionalURL && (
           <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white p-3 md:p-4 rounded-xl shadow-xl mb-4 md:mb-6">
             <div className="text-center mb-3">
               <p className="font-extrabold text-base md:text-lg mb-1">
@@ -1006,9 +987,7 @@ const MainApp = () => {
           <NavItem view="minigame" currentView={view} setView={setView} icon="🎮" label="Games" />
           <NavItem view="leaderboard" currentView={view} setView={setView} icon="🏆" label="Leaderboard" />
           <NavItem view="creatorhub" currentView={view} setView={setView} icon="🧑‍💻" label="Creator Hub" />
-          {!isGuest && (
-            <NavItem view="creatorprofile" currentView={view} setView={setView} icon="⭐" label="My Profile" />
-          )}
+          <NavItem view="creatorprofile" currentView={view} setView={setView} icon="⭐" label="My Profile" />
         </div>
       </footer>
     </div>
@@ -1050,14 +1029,14 @@ const App = () => {
 };
 
 const AppContent = ({ hasCompletedWelcome, setHasCompletedWelcome }) => {
-  const { currentUser, loading, isGuest } = useAuth();
+  const { currentUser, loading } = useAuth();
 
   // Reset welcome screen when user signs out
   useEffect(() => {
-    if (!loading && !currentUser && !isGuest) {
+    if (!loading && !currentUser) {
       setHasCompletedWelcome(false);
     }
-  }, [currentUser, isGuest, loading, setHasCompletedWelcome]);
+  }, [currentUser, loading, setHasCompletedWelcome]);
 
   // Show loading state while auth is initializing
   if (loading) {
@@ -1068,12 +1047,12 @@ const AppContent = ({ hasCompletedWelcome, setHasCompletedWelcome }) => {
     );
   }
 
-  // Show welcome page if user hasn't made a choice yet
-  if (!hasCompletedWelcome && !currentUser && !isGuest) {
+  // Show welcome page if user hasn't signed in yet
+  if (!hasCompletedWelcome && !currentUser) {
     return <WelcomePage onContinue={() => setHasCompletedWelcome(true)} />;
   }
 
-  // Show main app once authenticated or in guest mode
+  // Show main app once authenticated
   return <MainApp />;
 };
 

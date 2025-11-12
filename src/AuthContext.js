@@ -23,7 +23,6 @@ export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isGuest, setIsGuest] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -37,7 +36,6 @@ export const AuthProvider = ({ children }) => {
           if (userDoc.exists()) {
             const profile = userDoc.data();
             setUserProfile(profile);
-            setIsGuest(false);
             console.log('User profile loaded:', profile);
           } else {
             console.log('No user profile found');
@@ -55,15 +53,6 @@ export const AuthProvider = ({ children }) => {
 
     return unsubscribe;
   }, []);
-
-  // Guest mode - no authentication
-  const continueAsGuest = () => {
-    console.log('=== CONTINUING AS GUEST ===');
-    setIsGuest(true);
-    setCurrentUser(null);
-    setUserProfile(null);
-    setLoading(false);
-  };
 
   // Sign in with Google
   const signInWithGoogle = async (asCreator = false) => {
@@ -189,7 +178,6 @@ export const AuthProvider = ({ children }) => {
   const signOut = async () => {
     try {
       console.log('=== SIGNING OUT ===');
-      setIsGuest(false);
       setCurrentUser(null);
       setUserProfile(null);
       await firebaseSignOut(auth);
@@ -234,8 +222,6 @@ export const AuthProvider = ({ children }) => {
     currentUser,
     userProfile,
     loading,
-    isGuest,
-    continueAsGuest,
     signInWithGoogle,
     signInWithApple,
     signOut,
