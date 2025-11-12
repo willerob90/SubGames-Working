@@ -77,6 +77,7 @@ const MainApp = () => {
   const [showPointsAnimation, setShowPointsAnimation] = useState(null); // Show +X animation
   const [creators, setCreators] = useState([]); // Leaderboard data
   const [selectedCreator, setSelectedCreator] = useState(null); // User's daily pick
+  const [selectedCreatorProfile, setSelectedCreatorProfile] = useState(null); // Selected creator's full profile
   const [currentCycleId] = useState(getCurrentCycleId());
   const [reactionTestState, setReactionTestState] = useState('initial'); // 'initial', 'wait', 'go', 'result'
   const [reactionTime, setReactionTime] = useState(null);
@@ -173,6 +174,29 @@ const MainApp = () => {
     return unsubscribe;
   }, [user, isAuthReady, currentCycleId]);
 
+  // Fetch selected creator's profile
+  useEffect(() => {
+    if (!selectedCreator) {
+      setSelectedCreatorProfile(null);
+      return;
+    }
+
+    const fetchCreatorProfile = async () => {
+      try {
+        const creatorRef = getUserDocRef(db, selectedCreator);
+        const creatorSnap = await getDoc(creatorRef);
+        
+        if (creatorSnap.exists()) {
+          setSelectedCreatorProfile(creatorSnap.data());
+        }
+      } catch (error) {
+        console.error('Error fetching creator profile:', error);
+      }
+    };
+
+    fetchCreatorProfile();
+  }, [selectedCreator]);
+
   // 3. CREATOR/LEADERBOARD DATA LISTENER (Cycle-based)
   useEffect(() => {
     if (!db || !isAuthReady) return; // Wait until auth is ready
@@ -189,12 +213,14 @@ const MainApp = () => {
         const userRef = getUserDocRef(db, docSnap.id);
         const userSnap = await getDoc(userRef);
         
-        if (userSnap.exists() && userSnap.data().accountType === 'creator') {
-          const userData = userSnap.data();
+        const userData = userSnap.data();
+        const isCreator = userData?.accountType === 'creator' || userData?.isCreator === true;
+        
+        if (userSnap.exists() && isCreator) {
           creatorList.push({
             id: docSnap.id,
             name: userData.displayName,
-            contentUrl: userData.promotionalURL || '',
+            contentUrl: userData.promotionalURL || userData.creatorProfile?.promotionalUrl || '',
             points: leaderboardData.totalPoints || 0,
             supporterCount: leaderboardData.supporterCount || 0,
             photoURL: userData.photoURL || ''
@@ -303,7 +329,7 @@ const MainApp = () => {
     // Create session in the background (don't await)
     const startGameSession = httpsCallable(functions, 'startGameSession');
     startGameSession({
-      gameType: 'reactionTest',
+      gameType: 'reaction',
       difficulty: 'standard'
     }).then(result => {
       const sessionId = result.data.sessionId;
@@ -882,7 +908,8 @@ const MainApp = () => {
         const creatorsList = [];
         creatorsSnapshot.forEach((doc) => {
           const data = doc.data();
-          if (data.accountType === 'creator' && data.creatorProfile?.profileComplete) {
+          const isCreator = data.accountType === 'creator' || data.isCreator === true;
+          if (isCreator && data.creatorProfile?.profileComplete) {
             creatorsList.push({
               id: doc.id,
               name: data.displayName || 'Unknown Creator',
@@ -909,6 +936,12 @@ const MainApp = () => {
   const handleSupportCreator = async (creatorId) => {
     if (!user) {
       alert('Please sign in to support a creator');
+      return;
+    }
+
+    // Prevent switching if already supporting a creator
+    if (selectedCreator && selectedCreator !== creatorId) {
+      alert('You are already supporting a creator for this cycle. Your choice is locked until the next cycle.');
       return;
     }
 
@@ -1268,7 +1301,7 @@ const MainApp = () => {
             </div>
             {selectedCreator && (
               <span className="text-xs md:text-sm text-white bg-white/20 backdrop-blur-sm px-2 py-1 md:p-2 rounded-lg truncate max-w-[100px] md:max-w-none">
-                <span className="hidden md:inline">Supporting: </span>{creators.find(c => c.id === selectedCreator)?.name || 'Creator'}
+                <span className="hidden md:inline">Supporting: </span>{selectedCreatorProfile?.displayName || 'Creator'}
               </span>
             )}
           </div>

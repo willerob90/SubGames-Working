@@ -233,8 +233,11 @@ function CreatorProfile() {
     window.open('/terms-of-service.html', '_blank');
   };
 
-  const winRate = userProfile?.gamesPlayed > 0 
-    ? ((userProfile.gamesWon / userProfile.gamesPlayed) * 100).toFixed(1) 
+  const gamesPlayed = userProfile?.totalGamesPlayed || userProfile?.gamesPlayed || 0;
+  const gamesWon = userProfile?.totalGamesWon || userProfile?.gamesWon || 0;
+
+  const winRate = gamesPlayed > 0 
+    ? ((gamesWon / gamesPlayed) * 100).toFixed(1) 
     : 0;
 
   const isCreator = userProfile?.accountType === 'creator' || userProfile?.isCreator;
@@ -294,12 +297,12 @@ function CreatorProfile() {
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon">🎮</div>
-          <div className="stat-value">{userProfile.gamesPlayed || 0}</div>
+          <div className="stat-value">{userProfile.totalGamesPlayed || userProfile.gamesPlayed || 0}</div>
           <div className="stat-label">Games Played</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon">🏆</div>
-          <div className="stat-value">{userProfile.gamesWon || 0}</div>
+          <div className="stat-value">{userProfile.totalGamesWon || userProfile.gamesWon || 0}</div>
           <div className="stat-label">Games Won</div>
         </div>
         <div className="stat-card">

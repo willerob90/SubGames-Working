@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { auth, db } from './firebaseConfig';
+import { auth, db, functions } from './firebaseConfig';
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
@@ -8,6 +8,7 @@ import {
   onAuthStateChanged 
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 
 const AuthContext = createContext();
 
@@ -37,6 +38,26 @@ export const AuthProvider = ({ children }) => {
             const profile = userDoc.data();
             setUserProfile(profile);
             console.log('User profile loaded:', profile);
+            
+            // If creator with channel URL but no custom photo, fetch channel data
+            const isCreator = profile.accountType === 'creator' || profile.isCreator;
+            if (isCreator && profile.creatorProfile?.channelUrl) {
+              const channelUrl = profile.creatorProfile.channelUrl;
+              
+              // Check if we need to update (if using Google profile photo, always update)
+              const needsUpdate = !profile.photoURL || 
+                                  profile.photoURL.includes('googleusercontent.com');
+              
+              if (needsUpdate) {
+                if (channelUrl.includes('youtube.com')) {
+                  console.log('Fetching YouTube data for existing creator...');
+                  await updateProfileFromYouTube(user.uid, channelUrl);
+                } else if (channelUrl.includes('twitch.tv')) {
+                  console.log('Fetching Twitch data for existing creator...');
+                  await updateProfileFromTwitch(user.uid, channelUrl);
+                }
+              }
+            }
           } else {
             console.log('No user profile found');
             setUserProfile(null);
@@ -193,6 +214,68 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Fetch YouTube channel data and update profile
+  const updateProfileFromYouTube = async (userId, channelUrl) => {
+    try {
+      // Call Cloud Function to get YouTube data (keeps API key secure)
+      const getYouTubeData = httpsCallable(functions, 'getYouTubeChannelData');
+      const result = await getYouTubeData({ channelUrl });
+
+      if (result.data.success) {
+        const { displayName, photoURL } = result.data;
+
+        // Update Firestore profile
+        const userRef = doc(db, 'users', userId);
+        await setDoc(userRef, {
+          displayName: displayName,
+          photoURL: photoURL,
+        }, { merge: true });
+
+        // Update local state
+        setUserProfile(prev => ({
+          ...prev,
+          displayName: displayName,
+          photoURL: photoURL,
+        }));
+
+        console.log('Updated profile from YouTube:', { displayName, photoURL });
+      }
+    } catch (error) {
+      console.error('Error updating profile from YouTube:', error);
+    }
+  };
+
+  // Fetch Twitch channel data and update profile
+  const updateProfileFromTwitch = async (userId, channelUrl) => {
+    try {
+      // Call Cloud Function to get Twitch data (keeps client secret secure)
+      const getTwitchData = httpsCallable(functions, 'getTwitchChannelData');
+      const result = await getTwitchData({ channelUrl });
+
+      if (result.data.success) {
+        const { displayName, photoURL } = result.data;
+
+        // Update Firestore profile
+        const userRef = doc(db, 'users', userId);
+        await setDoc(userRef, {
+          displayName: displayName,
+          photoURL: photoURL,
+        }, { merge: true });
+
+        // Update local state
+        setUserProfile(prev => ({
+          ...prev,
+          displayName: displayName,
+          photoURL: photoURL,
+        }));
+
+        console.log('Updated profile from Twitch:', { displayName, photoURL });
+      }
+    } catch (error) {
+      console.error('Error updating profile from Twitch:', error);
+    }
+  };
+
   // Update creator profile
   const updateCreatorProfile = async (updates) => {
     if (!currentUser || (userProfile?.accountType !== 'creator' && !userProfile?.isCreator)) {
@@ -226,7 +309,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Complete creator onboarding
-  const completeCreatorOnboarding = async (channelUrl, promotionalUrl, platform, contentType) => {
+  const completeCreatorOnboarding = async (channelUrl, promotionalUrl, platform, contentType, youtubeData = null) => {
     if (!currentUser) {
       throw new Error('Must be signed in to complete onboarding');
     }
@@ -234,9 +317,14 @@ export const AuthProvider = ({ children }) => {
     try {
       const userRef = doc(db, 'users', currentUser.uid);
       
-      // Extract channel name from URL if possible
+      // Use YouTube data if available, otherwise extract from URL
       let channelName = userProfile?.displayName || currentUser.displayName || 'Creator';
-      if (channelUrl) {
+      let profilePhotoURL = userProfile?.photoURL || currentUser.photoURL || '';
+
+      if (youtubeData && youtubeData.name) {
+        channelName = youtubeData.name;
+        profilePhotoURL = youtubeData.photoURL || profilePhotoURL;
+      } else if (channelUrl) {
         // Simple extraction - you can make this more sophisticated
         const urlMatch = channelUrl.match(/(?:youtube\.com\/(?:c\/|channel\/|@)?|twitch\.tv\/|kick\.com\/)([^\/\?]+)/i);
         if (urlMatch) {
@@ -246,6 +334,7 @@ export const AuthProvider = ({ children }) => {
 
       const updates = {
         displayName: channelName,
+        photoURL: profilePhotoURL,
         creatorProfile: {
           ...(userProfile?.creatorProfile || {}),
           channelUrl,

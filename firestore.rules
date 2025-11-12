@@ -13,11 +13,23 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
-    // User profiles - anyone can read, only owners can write
+    // User profiles - anyone can read, only owners can write (with restrictions)
     match /users/{userId} {
       allow read: if true; // Anyone can read public profiles
       allow create: if isAuthenticated() && request.auth.uid == userId;
-      allow update, delete: if isOwner(userId);
+      // Prevent users from modifying protected fields
+      allow update: if isAuthenticated() 
+                    && request.auth.uid == userId
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                      'totalPointsEarned', 
+                      'totalGamesPlayed', 
+                      'totalGamesWon', 
+                      'accountType', 
+                      'isCreator',
+                      'uid',
+                      'createdAt'
+                    ]);
+      allow delete: if isOwner(userId);
     }
     
     // Cycles collection
@@ -28,10 +40,13 @@ service cloud.firestore {
         allow write: if false; // Only Cloud Functions can write
       }
       
-      // Picks - users can read their own, write their own if authenticated
+      // Picks - users can read their own, create once, but cannot update/switch
       match /picks/{userId} {
         allow read: if isOwner(userId);
-        allow create, update: if isAuthenticated() && isOwner(userId);
+        // Allow create only if document doesn't exist yet (first-time pick)
+        allow create: if isAuthenticated() && isOwner(userId) && !exists(/databases/$(database)/documents/cycles/$(cycleId)/picks/$(userId));
+        // Prevent updates - creator choice is locked once made
+        allow update: if false;
         allow delete: if false; // Prevent deletion
       }
       
@@ -51,6 +66,17 @@ service cloud.firestore {
     // Game results - users can read their own
     match /gameResults/{resultId} {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow write: if false; // Only Cloud Functions
+    }
+    
+    // Rate limiting - only Cloud Functions can write
+    match /rateLimits/{limitId} {
+      allow read, write: if false; // Only Cloud Functions
+    }
+    
+    // Referral clicks - only Cloud Functions can write
+    match /referralClicks/{clickId} {
+      allow read: if false;
       allow write: if false; // Only Cloud Functions
     }
     

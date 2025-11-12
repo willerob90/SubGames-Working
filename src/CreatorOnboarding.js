@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from './AuthContext';
+import { functions } from './firebaseConfig';
+import { httpsCallable } from 'firebase/functions';
 
 function CreatorOnboarding({ onComplete }) {
   const { completeCreatorOnboarding } = useAuth();
@@ -10,13 +12,60 @@ function CreatorOnboarding({ onComplete }) {
   const [contentType, setContentType] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [youtubeChannelData, setYoutubeChannelData] = useState(null);
 
-  const handleStep1Submit = (e) => {
+  // Fetch YouTube channel data
+  const fetchYouTubeChannelData = async (channelUrl) => {
+    try {
+      // Call Cloud Function to get YouTube data (keeps API key secure)
+      const getYouTubeData = httpsCallable(functions, 'getYouTubeChannelData');
+      const result = await getYouTubeData({ channelUrl });
+
+      if (result.data.success) {
+        return {
+          name: result.data.displayName,
+          photoURL: result.data.photoURL,
+          channelId: result.data.channelId
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error fetching YouTube channel data:', error);
+      return null;
+    }
+  };
+
+  // Fetch Twitch channel data
+  const fetchTwitchChannelData = async (channelUrl) => {
+    try {
+      // Call Cloud Function to get Twitch data (keeps client secret secure)
+      const getTwitchData = httpsCallable(functions, 'getTwitchChannelData');
+      const result = await getTwitchData({ channelUrl });
+
+      if (result.data.success) {
+        return {
+          name: result.data.displayName,
+          photoURL: result.data.photoURL,
+          channelId: channelUrl // Use URL as identifier
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error fetching Twitch channel data:', error);
+      return null;
+    }
+  };
+
+  const handleStep1Submit = async (e) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
     if (!channelUrl.trim()) {
       setError('Please enter your channel URL');
+      setLoading(false);
       return;
     }
 
@@ -24,6 +73,7 @@ function CreatorOnboarding({ onComplete }) {
     const urlPattern = /^https?:\/\/.+/i;
     if (!urlPattern.test(channelUrl)) {
       setError('Please enter a valid URL (starting with http:// or https://)');
+      setLoading(false);
       return;
     }
 
@@ -31,8 +81,20 @@ function CreatorOnboarding({ onComplete }) {
     let detectedPlatform = '';
     if (channelUrl.includes('youtube.com') || channelUrl.includes('youtu.be')) {
       detectedPlatform = 'YouTube';
+      
+      // Fetch YouTube channel data
+      const channelData = await fetchYouTubeChannelData(channelUrl);
+      if (channelData) {
+        setYoutubeChannelData(channelData);
+      }
     } else if (channelUrl.includes('twitch.tv')) {
       detectedPlatform = 'Twitch';
+      
+      // Fetch Twitch channel data
+      const channelData = await fetchTwitchChannelData(channelUrl);
+      if (channelData) {
+        setYoutubeChannelData(channelData); // Reuse the same state variable
+      }
     } else if (channelUrl.includes('kick.com')) {
       detectedPlatform = 'Kick';
     } else if (channelUrl.includes('tiktok.com')) {
@@ -40,6 +102,7 @@ function CreatorOnboarding({ onComplete }) {
     }
     
     setPlatform(detectedPlatform);
+    setLoading(false);
     setStep(2);
   };
 
@@ -49,7 +112,14 @@ function CreatorOnboarding({ onComplete }) {
     setLoading(true);
 
     try {
-      await completeCreatorOnboarding(channelUrl, promotionalUrl, platform, contentType);
+      // Pass YouTube channel data to the completion function
+      await completeCreatorOnboarding(
+        channelUrl, 
+        promotionalUrl, 
+        platform, 
+        contentType,
+        youtubeChannelData // Pass the YouTube data
+      );
       onComplete();
     } catch (error) {
       console.error('Error completing onboarding:', error);
@@ -91,9 +161,10 @@ function CreatorOnboarding({ onComplete }) {
 
               <button
                 type="submit"
+                disabled={loading}
                 className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 px-6 rounded-lg transition"
               >
-                Next
+                {loading ? 'Checking...' : 'Next'}
               </button>
             </form>
           </>

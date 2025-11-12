@@ -4,6 +4,54 @@ admin.initializeApp();
 
 const db = admin.firestore();
 
+// Rate limiting helper function
+const checkRateLimit = async (userId, action, maxRequests, windowMinutes) => {
+  const now = Date.now();
+  const windowMs = windowMinutes * 60 * 1000;
+  const rateLimitRef = db.collection('rateLimits').doc(`${userId}_${action}`);
+  
+  const rateLimitDoc = await rateLimitRef.get();
+  
+  if (rateLimitDoc.exists) {
+    const data = rateLimitDoc.data();
+    const windowStart = data.windowStart;
+    const requestCount = data.requestCount;
+    
+    // Check if we're still in the same time window
+    if (now - windowStart < windowMs) {
+      if (requestCount >= maxRequests) {
+        const timeLeft = Math.ceil((windowMs - (now - windowStart)) / 1000 / 60);
+        throw new functions.https.HttpsError(
+          'resource-exhausted',
+          `Rate limit exceeded. Please try again in ${timeLeft} minute(s).`
+        );
+      }
+      
+      // Increment counter
+      await rateLimitRef.update({
+        requestCount: admin.firestore.FieldValue.increment(1),
+        lastRequest: now
+      });
+    } else {
+      // New window
+      await rateLimitRef.set({
+        windowStart: now,
+        requestCount: 1,
+        lastRequest: now
+      });
+    }
+  } else {
+    // First request
+    await rateLimitRef.set({
+      windowStart: now,
+      requestCount: 1,
+      lastRequest: now
+    });
+  }
+  
+  return true;
+};
+
 // Helper function to get current cycle ID
 const getCycleId = (daysAgo = 0) => {
   const now = new Date();
@@ -12,6 +60,16 @@ const getCycleId = (daysAgo = 0) => {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}-18:00`;
+};
+
+// Game validation constants
+const GAME_VALIDATION = {
+  'whackAMole': { minSeconds: 5, maxSeconds: 120, points: 3 },
+  'blockBlast': { minSeconds: 10, maxSeconds: 180, points: 5 },
+  'memoryFlip': { minSeconds: 8, maxSeconds: 150, points: 6 },
+  'colorMatch': { minSeconds: 15, maxSeconds: 200, points: 8 },
+  'patternPro': { minSeconds: 20, maxSeconds: 240, points: 10 },
+  'reaction': { minSeconds: 0.2, maxSeconds: 60, points: 1 } // Fast reactions are expected!
 };
 
 // Function 1: Start Game Session (Anti-cheat)
@@ -24,15 +82,25 @@ exports.startGameSession = functions.https.onCall(async (data, context) => {
   const userId = context.auth.uid;
   const { gameType, difficulty } = data;
   
+  // Validate game type
+  if (!GAME_VALIDATION[gameType]) {
+    throw new functions.https.HttpsError('invalid-argument', `Invalid game type: ${gameType}`);
+  }
+  
+  // Rate limit: 30 game sessions per hour per user
+  await checkRateLimit(userId, 'startGameSession', 30, 60);
+  
   const sessionRef = db.collection('gameSessions').doc();
+  const expiresAt = Date.now() + (10 * 60 * 1000); // 10 minutes
+  
   await sessionRef.set({
     userId,
     gameType,
     difficulty: difficulty || 'easy',
     startTime: admin.firestore.FieldValue.serverTimestamp(),
     used: false,
-    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
-    expectedPointValue: 1
+    expiresAt: admin.firestore.Timestamp.fromMillis(expiresAt),
+    expectedPointValue: GAME_VALIDATION[gameType].points
   });
   
   return { sessionId: sessionRef.id };
@@ -47,6 +115,9 @@ exports.submitGameResult = functions.https.onCall(async (data, context) => {
   
   const userId = context.auth.uid;
   const { sessionId, timeTaken } = data;
+  
+  // Rate limit: 30 submissions per hour per user
+  await checkRateLimit(userId, 'submitGameResult', 30, 60);
   
   // Validate session
   const sessionDoc = await db.collection('gameSessions').doc(sessionId).get();
@@ -70,18 +141,39 @@ exports.submitGameResult = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('deadline-exceeded', 'Session expired');
   }
   
+  // NEW: Validate game completion time
+  const gameType = session.gameType;
+  const validation = GAME_VALIDATION[gameType];
+  
+  if (!validation) {
+    throw new functions.https.HttpsError('invalid-argument', `Unknown game type: ${gameType}`);
+  }
+  
+  // Calculate actual time taken (server-side, not client-provided)
+  const startTime = session.startTime.toMillis();
+  const actualTimeTaken = Date.now() - startTime;
+  const actualSeconds = actualTimeTaken / 1000;
+  
+  // Validate time is within acceptable range
+  if (actualSeconds < validation.minSeconds) {
+    console.warn(`Suspicious fast completion: ${userId} completed ${gameType} in ${actualSeconds}s (min: ${validation.minSeconds}s)`);
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      `Game completed too quickly. Minimum time is ${validation.minSeconds} seconds.`
+    );
+  }
+  
+  if (actualSeconds > validation.maxSeconds) {
+    throw new functions.https.HttpsError(
+      'deadline-exceeded',
+      `Game took too long. Maximum time is ${validation.maxSeconds} seconds.`
+    );
+  }
+  
   const cycleId = getCycleId();
   
-  // Determine points based on game type
-  const gamePoints = {
-    'reaction': 1,
-    'whackAMole': 3,
-    'blockBlast': 5,
-    'memoryFlip': 6,
-    'colorMatch': 8,
-    'patternPro': 10
-  };
-  const pointsAwarded = gamePoints[session.gameType] || 1;
+  // Use validated points from server config, not client data
+  const pointsAwarded = validation.points;
   
   // Get user's pick for this cycle
   const pickDoc = await db.collection('cycles').doc(cycleId).collection('picks').doc(userId).get();
@@ -340,6 +432,11 @@ exports.trackReferralClick = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'Creator ID required');
   }
   
+  // Rate limit referral clicks (even for anonymous users)
+  // Use IP address or user ID for tracking
+  const identifier = context.auth ? context.auth.uid : context.rawRequest.ip;
+  await checkRateLimit(identifier, `referralClick_${creatorId}`, 10, 60);
+  
   try {
     // Increment referral click count in creator's profile
     await db.collection('users').doc(creatorId).update({
@@ -359,6 +456,167 @@ exports.trackReferralClick = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('internal', 'Failed to track referral');
   }
 });
+
+// Function 8: Get Twitch Channel Data (Server-side OAuth)
+exports.getTwitchChannelData = functions.https.onCall(async (data, context) => {
+  const { channelUrl } = data;
+  
+  if (!channelUrl) {
+    throw new functions.https.HttpsError('invalid-argument', 'Channel URL required');
+  }
+  
+  // Rate limit: 5 Twitch lookups per 10 minutes (even anonymous users can't spam)
+  const identifier = context.auth ? context.auth.uid : context.rawRequest.ip;
+  await checkRateLimit(identifier, 'getTwitchChannelData', 5, 10);
+  
+  try {
+    // Get Twitch credentials from environment variables
+    const clientId = process.env.TWITCH_CLIENT_ID;
+    const clientSecret = process.env.TWITCH_CLIENT_SECRET;
+    
+    if (!clientId || !clientSecret) {
+      console.error('Twitch API credentials not configured');
+      throw new functions.https.HttpsError('failed-precondition', 'Twitch API not configured');
+    }
+
+    // Extract username from Twitch URL
+    const usernameMatch = channelUrl.match(/twitch\.tv\/([^\/\?]+)/i);
+    if (!usernameMatch) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid Twitch URL format');
+    }
+    const username = usernameMatch[1];
+
+    // Get OAuth token
+    const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`
+    });
+
+    if (!tokenResponse.ok) {
+      throw new functions.https.HttpsError('internal', 'Failed to get Twitch OAuth token');
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+
+    // Get user data
+    const userResponse = await fetch(`https://api.twitch.tv/helix/users?login=${username}`, {
+      headers: {
+        'Client-ID': clientId,
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (!userResponse.ok) {
+      throw new functions.https.HttpsError('internal', 'Failed to fetch Twitch user data');
+    }
+
+    const userData = await userResponse.json();
+
+    if (!userData.data || userData.data.length === 0) {
+      throw new functions.https.HttpsError('not-found', 'Twitch channel not found');
+    }
+
+    const user = userData.data[0];
+    
+    return {
+      success: true,
+      displayName: user.display_name,
+      photoURL: user.profile_image_url,
+      description: user.description || ''
+    };
+  } catch (error) {
+    console.error('Error fetching Twitch data:', error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    throw new functions.https.HttpsError('internal', 'Failed to fetch Twitch channel data');
+  }
+});
+
+// Function 9: Get YouTube Channel Data (Server-side API)
+exports.getYouTubeChannelData = functions.https.onCall(async (data, context) => {
+  const { channelUrl } = data;
+  
+  if (!channelUrl) {
+    throw new functions.https.HttpsError('invalid-argument', 'Channel URL required');
+  }
+  
+  // Rate limit: 5 YouTube lookups per 10 minutes
+  const identifier = context.auth ? context.auth.uid : context.rawRequest.ip;
+  await checkRateLimit(identifier, 'getYouTubeChannelData', 5, 10);
+  
+  try {
+    // Get YouTube API key from environment variables
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    
+    if (!apiKey) {
+      console.error('YouTube API key not configured');
+      throw new functions.https.HttpsError('failed-precondition', 'YouTube API not configured');
+    }
+
+    // Extract channel ID or username from URL
+    let channelId = null;
+    let username = null;
+
+    const handleMatch = channelUrl.match(/youtube\.com\/@([^\/\?]+)/i);
+    if (handleMatch) {
+      username = handleMatch[1];
+    }
+
+    const channelMatch = channelUrl.match(/youtube\.com\/channel\/([^\/\?]+)/i);
+    if (channelMatch) {
+      channelId = channelMatch[1];
+    }
+
+    const customMatch = channelUrl.match(/youtube\.com\/c\/([^\/\?]+)/i);
+    if (customMatch) {
+      username = customMatch[1];
+    }
+
+    let apiUrl;
+    if (channelId) {
+      apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelId}&key=${apiKey}`;
+    } else if (username) {
+      apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${username}&key=${apiKey}`;
+    } else {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid YouTube URL format');
+    }
+
+    const response = await fetch(apiUrl);
+    
+    if (!response.ok) {
+      throw new functions.https.HttpsError('internal', 'Failed to fetch YouTube data');
+    }
+
+    const data = await response.json();
+
+    if (!data.items || data.items.length === 0) {
+      throw new functions.https.HttpsError('not-found', 'YouTube channel not found');
+    }
+
+    const channel = data.items[0];
+    
+    return {
+      success: true,
+      displayName: channel.snippet.title,
+      photoURL: channel.snippet.thumbnails.medium?.url || channel.snippet.thumbnails.default?.url,
+      description: channel.snippet.description || '',
+      subscriberCount: channel.statistics.subscriberCount || '0',
+      channelId: channel.id
+    };
+  } catch (error) {
+    console.error('Error fetching YouTube data:', error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    throw new functions.https.HttpsError('internal', 'Failed to fetch YouTube channel data');
+  }
+});
+
 // Function 6: Clean Up Old Sessions (run hourly)
 exports.cleanupExpiredSessions = functions.pubsub.schedule('0 * * * *')
   .onRun(async (context) => {
