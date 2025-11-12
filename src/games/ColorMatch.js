@@ -129,6 +129,7 @@ const ColorMatch = ({ onGameWin }) => {
 
   return (
     <div className="flex flex-col items-center space-y-4 md:space-y-6 p-2 md:p-4">
+      {/* Title */}
       <div className="text-center space-y-1 md:space-y-2">
         <h2 className="text-xl md:text-3xl font-bold text-blue-400">Color Match</h2>
         <p className="text-xs md:text-base text-gray-400">Repeat the color sequence!</p>
@@ -139,11 +140,30 @@ const ColorMatch = ({ onGameWin }) => {
         </div>
       </div>
 
+      {/* Color Grid - Always visible */}
+      <div className="grid grid-cols-2 gap-3 md:gap-4 w-full max-w-md">
+        {COLORS.map((color) => (
+          <button
+            key={color.id}
+            onClick={() => handleColorClick(color.id)}
+            disabled={gameState !== 'player-turn'}
+            className={`h-40 md:h-48 rounded-xl transition-all shadow-lg ${
+              activeColor === color.id 
+                ? color.active 
+                : color.bg
+            } ${
+              gameState === 'player-turn' 
+                ? `${color.hover} cursor-pointer` 
+                : 'cursor-not-allowed opacity-70'
+            }`}
+          />
+        ))}
+      </div>
+
       {/* Game State Messages */}
       {gameState === 'intro' && (
-        <div className="bg-blue-900/50 border-2 border-blue-500 p-4 md:p-6 rounded-xl text-center max-w-md">
+        <div className="text-center max-w-md">
           <p className="text-base md:text-lg text-blue-300 mb-3 md:mb-4">
-            Watch the sequence, then repeat it by clicking the colors in the correct order.
             Reach level 8 to win!
           </p>
           <button
@@ -196,28 +216,6 @@ const ColorMatch = ({ onGameWin }) => {
           >
             Play Again
           </button>
-        </div>
-      )}
-
-      {/* Color Grid */}
-      {gameState !== 'intro' && (
-        <div className="grid grid-cols-2 gap-3 md:gap-4 w-full max-w-md">
-          {COLORS.map((color) => (
-            <button
-              key={color.id}
-              onClick={() => handleColorClick(color.id)}
-              disabled={gameState !== 'player-turn'}
-              className={`h-32 md:h-40 rounded-xl transition-all shadow-lg ${
-                activeColor === color.id 
-                  ? color.active 
-                  : color.bg
-              } ${
-                gameState === 'player-turn' 
-                  ? `${color.hover} cursor-pointer` 
-                  : 'cursor-not-allowed opacity-70'
-              }`}
-            />
-          ))}
         </div>
       )}
     </div>

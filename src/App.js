@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, onSnapshot, collection, updateDoc, increment, getDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection, updateDoc, increment, getDoc, getDocs } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions, firebaseConfig } from './firebaseConfig';
 import { AuthProvider, useAuth } from './AuthContext';
 import WelcomePage from './WelcomePage';
 import CreatorProfile from './CreatorProfile';
+import CreatorOnboarding from './CreatorOnboarding';
 import BlockBlast from './games/BlockBlast';
 import ColorMatch from './games/ColorMatch';
+import MemoryFlip from './games/MemoryFlip';
+import PatternPro from './games/PatternPro';
+import WhackAMole from './games/WhackAMole';
 
 // --- CONFIGURATION SETUP ---
 // NOTE: Global variables (__app_id, etc.) are used here for compatibility 
@@ -69,6 +73,8 @@ const MainApp = () => {
   const [view, setView] = useState('minigame'); // 'minigame', 'leaderboard', 'creatorhub', 'creatorprofile'
   const [selectedGame, setSelectedGame] = useState(null); // null for library, 'reaction' or 'blockblast' for playing
   const [playerPoints, setPlayerPoints] = useState(0); // Points earned this cycle
+  const [optimisticPoints, setOptimisticPoints] = useState(0); // Immediate UI update
+  const [showPointsAnimation, setShowPointsAnimation] = useState(null); // Show +X animation
   const [creators, setCreators] = useState([]); // Leaderboard data
   const [selectedCreator, setSelectedCreator] = useState(null); // User's daily pick
   const [currentCycleId] = useState(getCurrentCycleId());
@@ -81,6 +87,7 @@ const MainApp = () => {
   const [loading, setLoading] = useState(true);
   const [cycleWinner, setCycleWinner] = useState(null); // Yesterday's winner
   const [hasPityPoint, setHasPityPoint] = useState(false); // User has pity point
+  const [showCreatorOnboarding, setShowCreatorOnboarding] = useState(false); // Show onboarding modal
 
   // 1. AUTHENTICATION EFFECT
   useEffect(() => {
@@ -127,6 +134,15 @@ const MainApp = () => {
     }
   }, []); // Removed isAuthReady to prevent infinite loop
 
+  // Check if creator needs onboarding
+  useEffect(() => {
+    if (userProfile && userProfile.accountType === 'creator' && !userProfile.creatorProfile?.profileComplete) {
+      setShowCreatorOnboarding(true);
+    } else {
+      setShowCreatorOnboarding(false);
+    }
+  }, [userProfile]);
+
   // 2. CYCLE PICK DATA LISTENER (User's current pick and points earned this cycle)
   useEffect(() => {
     // Skip if not authenticated
@@ -141,11 +157,15 @@ const MainApp = () => {
     const unsubscribe = onSnapshot(cyclePickRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setPlayerPoints(data.pointsEarned || 0);
+        const dbPoints = data.pointsEarned || 0;
+        setPlayerPoints(dbPoints);
+        // Sync optimistic points with database (in case of discrepancy)
+        setOptimisticPoints(dbPoints);
         setSelectedCreator(data.creatorId || null);
       } else {
         // No pick yet for this cycle
         setPlayerPoints(0);
+        setOptimisticPoints(0);
         setSelectedCreator(null);
       }
     });
@@ -242,8 +262,27 @@ const MainApp = () => {
     loadWinnerAndPityPoints();
   }, [isAuthReady, user, currentCycleId]);
 
+  // Helper function for optimistic updates and animations
+  const showPointsEarned = useCallback((points) => {
+    // Immediately update UI
+    setOptimisticPoints(prev => prev + points);
+    // Show animation
+    setShowPointsAnimation(points);
+    // Hide animation after 3 seconds
+    setTimeout(() => setShowPointsAnimation(null), 3000);
+  }, []);
+
   // --- MINIGAME LOGIC (Reaction Test) ---
 
+  // Reset reaction test when leaving the game
+  useEffect(() => {
+    if (selectedGame !== 'reaction') {
+      setReactionTestState('initial');
+      setReactionTime(null);
+      setGameSessionId(null);
+      setGameStartTime(null);
+    }
+  }, [selectedGame]);
 
   const startReactionTest = useCallback(() => {
     if (!user || !selectedCreator) {
@@ -297,6 +336,9 @@ const MainApp = () => {
           return;
         }
 
+        // Show points immediately (optimistic update)
+        showPointsEarned(1);
+
         try {
           // Call Cloud Function to validate and record the result
           const submitGameResult = httpsCallable(functions, 'submitGameResult');
@@ -309,10 +351,14 @@ const MainApp = () => {
             setProfileStatus(`Success! +${result.data.pointsAwarded} points for ${creators.find(c => c.id === result.data.creatorId)?.name || 'creator'}!`);
           } else if (!result.data.success) {
             setProfileStatus('Error: Failed to submit game result');
+            // Rollback optimistic update on error
+            setOptimisticPoints(prev => prev - 1);
           }
         } catch (error) {
           console.error('Error submitting game result:', error.message);
           setProfileStatus(`Error submitting result: ${error.message}`);
+          // Rollback optimistic update on error
+          setOptimisticPoints(prev => prev - 1);
         }
       }
       return;
@@ -321,7 +367,7 @@ const MainApp = () => {
     if (reactionTestState === 'initial' || reactionTestState === 'result') {
       startReactionTest();
     }
-  }, [reactionTestState, user, view, startReactionTest, selectedCreator, gameSessionId, gameStartTime, creators]);
+  }, [reactionTestState, user, view, startReactionTest, selectedCreator, gameSessionId, gameStartTime, creators, showPointsEarned]);
 
 
   // Handle Block Blast game win
@@ -333,6 +379,9 @@ const MainApp = () => {
       });
       return;
     }
+
+    // Show points immediately (optimistic update)
+    showPointsEarned(5);
 
     try {
       console.log('🎮 Block Blast Win! Creating session and submitting result...');
@@ -359,12 +408,16 @@ const MainApp = () => {
         setProfileStatus(`Success! +5 points for ${creators.find(c => c.id === selectedCreator)?.name || 'creator'}!`);
       } else {
         setProfileStatus('Error: Failed to submit game result');
+        // Rollback optimistic update on error
+        setOptimisticPoints(prev => prev - 5);
       }
     } catch (error) {
       console.error('Error submitting Block Blast result:', error);
       setProfileStatus(`Error: ${error.message}`);
+      // Rollback optimistic update on error
+      setOptimisticPoints(prev => prev - 5);
     }
-  }, [user, selectedCreator, creators]);
+  }, [user, selectedCreator, creators, showPointsEarned]);
 
   // Handle Color Match game win
   const handleColorMatchWin = useCallback(async (level) => {
@@ -375,6 +428,9 @@ const MainApp = () => {
       });
       return;
     }
+
+    // Show points immediately (optimistic update)
+    showPointsEarned(8);
 
     try {
       console.log('🎨 Color Match Win! Creating session and submitting result...');
@@ -401,12 +457,164 @@ const MainApp = () => {
         setProfileStatus(`Success! +8 points for ${creators.find(c => c.id === selectedCreator)?.name || 'creator'}!`);
       } else {
         setProfileStatus('Error: Failed to submit game result');
+        // Rollback optimistic update on error
+        setOptimisticPoints(prev => prev - 8);
       }
     } catch (error) {
       console.error('Error submitting Color Match result:', error);
       setProfileStatus(`Error: ${error.message}`);
+      // Rollback optimistic update on error
+      setOptimisticPoints(prev => prev - 8);
     }
-  }, [user, selectedCreator, creators]);
+  }, [user, selectedCreator, creators, showPointsEarned]);
+
+  // Handle Memory Flip game win
+  const handleMemoryFlipWin = useCallback(async (points) => {
+    if (!user || !selectedCreator) {
+      console.log('Cannot award points - missing requirements:', { 
+        hasUser: !!user, 
+        hasCreator: !!selectedCreator
+      });
+      return;
+    }
+
+    // Show points immediately (optimistic update)
+    showPointsEarned(6);
+
+    try {
+      console.log('🃏 Memory Flip Win! Creating session and submitting result...');
+      
+      // Create a game session
+      const startGameSession = httpsCallable(functions, 'startGameSession');
+      const sessionResult = await startGameSession({
+        gameType: 'memoryFlip',
+        difficulty: 'standard'
+      });
+
+      console.log('Session created:', sessionResult.data.sessionId);
+
+      // Submit the game result
+      const submitGameResult = httpsCallable(functions, 'submitGameResult');
+      const result = await submitGameResult({
+        sessionId: sessionResult.data.sessionId,
+        timeTaken: 0
+      });
+
+      console.log('Result submitted:', result.data);
+
+      if (result.data.success) {
+        setProfileStatus(`Success! +6 points for ${creators.find(c => c.id === selectedCreator)?.name || 'creator'}!`);
+      } else {
+        setProfileStatus('Error: Failed to submit game result');
+        // Rollback optimistic update on error
+        setOptimisticPoints(prev => prev - 6);
+      }
+    } catch (error) {
+      console.error('Error submitting Memory Flip result:', error);
+      setProfileStatus(`Error: ${error.message}`);
+      // Rollback optimistic update on error
+      setOptimisticPoints(prev => prev - 6);
+    }
+  }, [user, selectedCreator, creators, showPointsEarned]);
+
+  // Handle Pattern Pro game win
+  const handlePatternProWin = useCallback(async (points) => {
+    if (!user || !selectedCreator) {
+      console.log('Cannot award points - missing requirements:', { 
+        hasUser: !!user, 
+        hasCreator: !!selectedCreator
+      });
+      return;
+    }
+
+    // Show points immediately (optimistic update)
+    showPointsEarned(10);
+
+    try {
+      console.log('🧩 Pattern Pro Win! Creating session and submitting result...');
+      
+      // Create a game session
+      const startGameSession = httpsCallable(functions, 'startGameSession');
+      const sessionResult = await startGameSession({
+        gameType: 'patternPro',
+        difficulty: 'standard'
+      });
+
+      console.log('Session created:', sessionResult.data.sessionId);
+
+      // Submit the game result
+      const submitGameResult = httpsCallable(functions, 'submitGameResult');
+      const result = await submitGameResult({
+        sessionId: sessionResult.data.sessionId,
+        timeTaken: 0
+      });
+
+      console.log('Result submitted:', result.data);
+
+      if (result.data.success) {
+        setProfileStatus(`Success! +10 points for ${creators.find(c => c.id === selectedCreator)?.name || 'creator'}!`);
+      } else {
+        setProfileStatus('Error: Failed to submit game result');
+        // Rollback optimistic update on error
+        setOptimisticPoints(prev => prev - 10);
+      }
+    } catch (error) {
+      console.error('Error submitting Pattern Pro result:', error);
+      setProfileStatus(`Error: ${error.message}`);
+      // Rollback optimistic update on error
+      setOptimisticPoints(prev => prev - 10);
+    }
+  }, [user, selectedCreator, creators, showPointsEarned]);
+
+  // Handle Whack-a-Mole game win
+  // Handle Whack-a-Mole game win
+  const handleWhackAMoleWin = useCallback(async (points) => {
+    if (!user || !selectedCreator) {
+      console.log('Cannot award points - missing requirements:', { 
+        hasUser: !!user, 
+        hasCreator: !!selectedCreator
+      });
+      return;
+    }
+
+    // Show points immediately (optimistic update)
+    showPointsEarned(3);
+
+    try {
+      console.log('🎪 Whack-a-Mole Win! Creating session and submitting result...');
+      
+      // Create a game session
+      const startGameSession = httpsCallable(functions, 'startGameSession');
+      const sessionResult = await startGameSession({
+        gameType: 'whackAMole',
+        difficulty: 'standard'
+      });
+
+      console.log('Session created:', sessionResult.data.sessionId);
+
+      // Submit the game result
+      const submitGameResult = httpsCallable(functions, 'submitGameResult');
+      const result = await submitGameResult({
+        sessionId: sessionResult.data.sessionId,
+        timeTaken: 0
+      });
+
+      console.log('Result submitted:', result.data);
+
+      if (result.data.success) {
+        setProfileStatus(`Success! +3 points for ${creators.find(c => c.id === selectedCreator)?.name || 'creator'}!`);
+      } else {
+        setProfileStatus('Error: Failed to submit game result');
+        // Rollback optimistic update on error
+        setOptimisticPoints(prev => prev - 3);
+      }
+    } catch (error) {
+      console.error('Error submitting Whack-a-Mole result:', error);
+      setProfileStatus(`Error: ${error.message}`);
+      // Rollback optimistic update on error
+      setOptimisticPoints(prev => prev - 3);
+    }
+  }, [user, selectedCreator, creators, showPointsEarned]);
 
   const miniGameContent = useMemo(() => {
     // If a game is selected, show the game
@@ -434,6 +642,48 @@ const MainApp = () => {
             ← Back to Games
           </button>
           <ColorMatch onGameWin={handleColorMatchWin} />
+        </div>
+      );
+    }
+
+    if (selectedGame === 'memoryflip') {
+      return (
+        <div className="space-y-4">
+          <button
+            onClick={() => setSelectedGame(null)}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+          >
+            ← Back to Games
+          </button>
+          <MemoryFlip onGameWin={handleMemoryFlipWin} />
+        </div>
+      );
+    }
+
+    if (selectedGame === 'patternpro') {
+      return (
+        <div className="space-y-4">
+          <button
+            onClick={() => setSelectedGame(null)}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+          >
+            ← Back to Games
+          </button>
+          <PatternPro onGameWin={handlePatternProWin} />
+        </div>
+      );
+    }
+
+    if (selectedGame === 'whackamole') {
+      return (
+        <div className="space-y-4">
+          <button
+            onClick={() => setSelectedGame(null)}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+          >
+            ← Back to Games
+          </button>
+          <WhackAMole onGameWin={handleWhackAMoleWin} />
         </div>
       );
     }
@@ -505,6 +755,14 @@ const MainApp = () => {
         points: '1 point',
       },
       {
+        id: 'whackamole',
+        name: 'Whack-a-Mole',
+        icon: '🎪',
+        description: 'Tap the critters before they hide! Hit 30 in 30 seconds to win.',
+        color: 'from-orange-500 to-red-600',
+        points: '3 points',
+      },
+      {
         id: 'blockblast',
         name: 'Block Blast',
         icon: '🧩',
@@ -513,12 +771,28 @@ const MainApp = () => {
         points: '5 points',
       },
       {
+        id: 'memoryflip',
+        name: 'Memory Flip',
+        icon: '🃏',
+        description: 'Match all the pairs! Find 8 matching card pairs to win.',
+        color: 'from-purple-500 to-pink-600',
+        points: '6 points',
+      },
+      {
         id: 'colormatch',
         name: 'Color Match',
         icon: '🎨',
         description: 'Simon says! Repeat the color sequence. Reach level 8 to win!',
         color: 'from-blue-500 to-blue-600',
         points: '8 points',
+      },
+      {
+        id: 'patternpro',
+        name: 'Pattern Pro',
+        icon: '🧠',
+        description: 'Master the patterns! Solve 10 challenging pattern puzzles to win.',
+        color: 'from-cyan-500 to-blue-600',
+        points: '10 points',
       },
     ];
 
@@ -529,172 +803,261 @@ const MainApp = () => {
           <p className="text-gray-400">Choose a game to play and earn points</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-          {games.map((game) => (
+        {!selectedCreator && userProfile?.accountType === 'player' && (
+          <div className="bg-yellow-500/20 backdrop-blur-sm border border-yellow-400/30 rounded-lg p-6 text-center">
+            <div className="text-5xl mb-3">🔒</div>
+            <h3 className="text-xl font-bold text-yellow-100 mb-2">Games Locked</h3>
+            <p className="text-yellow-100 mb-4">
+              Pick a creator from the Creator Hub to unlock games and start earning points!
+            </p>
             <button
-              key={game.id}
-              onClick={() => setSelectedGame(game.id)}
-              className="group relative bg-white/10 backdrop-blur-sm rounded-2xl overflow-hidden hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl border-2 border-white/20 hover:border-white/40"
+              onClick={() => setView('creatorhub')}
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-2 px-6 rounded-lg transition"
             >
-              <div className={`absolute inset-0 bg-gradient-to-br ${game.color} opacity-10 group-hover:opacity-20 transition-opacity`}></div>
-              
-              <div className="relative p-6 md:p-8 text-left">
-                <div className="text-6xl md:text-7xl mb-4">{game.icon}</div>
+              Choose a Creator
+            </button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+          {games.map((game) => {
+            const isLocked = !selectedCreator && userProfile?.accountType === 'player';
+            
+            return (
+              <button
+                key={game.id}
+                onClick={() => !isLocked && setSelectedGame(game.id)}
+                disabled={isLocked}
+                className={`group relative bg-white/10 backdrop-blur-sm rounded-2xl overflow-hidden ${
+                  isLocked 
+                    ? 'opacity-50 cursor-not-allowed' 
+                    : 'hover:scale-105 hover:shadow-2xl hover:border-white/40'
+                } transition-all duration-300 shadow-xl border-2 border-white/20`}
+              >
+                <div className={`absolute inset-0 bg-gradient-to-br ${game.color} opacity-10 ${!isLocked && 'group-hover:opacity-20'} transition-opacity`}></div>
                 
-                <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">
-                  {game.name}
-                </h3>
+                <div className="relative p-6 md:p-8 text-left">
+                  {isLocked && (
+                    <div className="absolute top-4 right-4 text-3xl">🔒</div>
+                  )}
+                  
+                  <div className="text-6xl md:text-7xl mb-4">{game.icon}</div>
+                  
+                  <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">
+                    {game.name}
+                  </h3>
+                  
+                  <p className="text-gray-200 mb-4 text-sm md:text-base">
+                    {game.description}
+                  </p>
+                  
+                  <div className="flex items-center justify-between">
+                    <span className={`px-3 py-1 rounded-full bg-gradient-to-r ${game.color} text-white text-sm font-semibold`}>
+                      Earn {game.points}
+                    </span>
+                    {!isLocked && (
+                      <span className="text-white font-semibold group-hover:translate-x-2 transition-transform">
+                        Play Now →
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }, [selectedGame, reactionTestState, reactionTime, startReactionTest, handleReactionClick, handleBlockBlastWin, handleColorMatchWin, handleMemoryFlipWin, handlePatternProWin, handleWhackAMoleWin, selectedCreator, userProfile]);
+
+  // --- CREATOR HUB LOGIC ---
+
+  const [selectedCreatorForModal, setSelectedCreatorForModal] = useState(null);
+  const [allCreators, setAllCreators] = useState([]);
+
+  // Fetch all creators for Creator Hub
+  useEffect(() => {
+    const fetchAllCreators = async () => {
+      try {
+        const usersRef = collection(db, 'users');
+        const creatorsSnapshot = await getDocs(usersRef);
+        
+        const creatorsList = [];
+        creatorsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.accountType === 'creator' && data.creatorProfile?.profileComplete) {
+            creatorsList.push({
+              id: doc.id,
+              name: data.displayName || 'Unknown Creator',
+              photoURL: data.photoURL || '',
+              channelUrl: data.creatorProfile?.channelUrl || '',
+              promotionalUrl: data.creatorProfile?.promotionalUrl || '',
+              platform: data.creatorProfile?.platform || 'Other',
+              contentType: data.creatorProfile?.contentType || 'Other',
+            });
+          }
+        });
+        
+        setAllCreators(creatorsList);
+      } catch (error) {
+        console.error('Error fetching creators:', error);
+      }
+    };
+
+    if (view === 'creatorhub') {
+      fetchAllCreators();
+    }
+  }, [view]);
+
+  const handleSupportCreator = async (creatorId) => {
+    if (!user) {
+      alert('Please sign in to support a creator');
+      return;
+    }
+
+    try {
+      const cyclePickRef = getCyclePickRef(db, currentCycleId, user.uid);
+      await setDoc(cyclePickRef, {
+        creatorId: creatorId,
+        pickedAt: Date.now()
+      });
+
+      setSelectedCreator(creatorId);
+      setSelectedCreatorForModal(null);
+      alert('Creator supported! You can now play games and earn points for them.');
+      setView('minigame'); // Redirect to games
+    } catch (error) {
+      console.error('Error supporting creator:', error);
+      alert('Error supporting creator. Please try again.');
+    }
+  };
+
+  const getPlatformIcon = (platform) => {
+    const icons = {
+      'YouTube': '📺',
+      'Twitch': '🎮',
+      'Kick': '⚡',
+      'TikTok': '🎵',
+      'Other': '🌐'
+    };
+    return icons[platform] || '🌐';
+  };
+
+  const creatorHubContent = (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">Creator Hub</h2>
+        <p className="text-gray-300">Browse and support your favorite creators</p>
+      </div>
+
+      {allCreators.length === 0 ? (
+        <div className="text-center py-12">
+          <div className="text-6xl mb-4">🔍</div>
+          <p className="text-gray-300 text-lg">No creators found yet</p>
+          <p className="text-gray-400 text-sm mt-2">Be the first to sign up as a creator!</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {allCreators.map((creator) => (
+            <button
+              key={creator.id}
+              onClick={() => setSelectedCreatorForModal(creator)}
+              className="hover:scale-105 transition-all duration-300"
+            >
+              <div className="flex flex-col items-center text-center">
+                {creator.photoURL ? (
+                  <img 
+                    src={creator.photoURL} 
+                    alt={creator.name}
+                    className="w-20 h-20 md:w-24 md:h-24 rounded-full border-2 border-white/30 hover:border-white/60 transition-all mb-1"
+                  />
+                ) : (
+                  <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-3xl md:text-4xl border-2 border-white/30 hover:border-white/60 transition-all mb-1">
+                    👤
+                  </div>
+                )}
                 
-                <p className="text-gray-200 mb-4 text-sm md:text-base">
-                  {game.description}
-                </p>
-                
-                <div className="flex items-center justify-between">
-                  <span className={`px-3 py-1 rounded-full bg-gradient-to-r ${game.color} text-white text-sm font-semibold`}>
-                    Earn {game.points}
-                  </span>
-                  <span className="text-white font-semibold group-hover:translate-x-2 transition-transform">
-                    Play Now →
-                  </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">{getPlatformIcon(creator.platform)}</span>
+                  <span className="text-sm text-gray-300 font-medium">{creator.platform}</span>
                 </div>
               </div>
             </button>
           ))}
         </div>
-
-        {!selectedCreator && (
-          <div className="bg-yellow-500/20 backdrop-blur-sm border border-yellow-400/30 rounded-lg p-4 text-center">
-            <p className="text-yellow-100 text-sm md:text-base">
-              💡 Pick a creator from the Leaderboard to start earning points!
-            </p>
-          </div>
-        )}
-      </div>
-    );
-  }, [selectedGame, reactionTestState, reactionTime, startReactionTest, handleReactionClick, handleBlockBlastWin, handleColorMatchWin, selectedCreator]);
-
-  // --- CREATOR HUB LOGIC ---
-
-  const handleProfileChange = (e) => {
-    setProfileStatus('');
-    setProfile({ ...profile, [e.target.name]: e.target.value });
-  };
-
-  const handleUpdateProfile = async (e) => {
-    e.preventDefault();
-    if (!user || !profile.name || !profile.contentUrl) {
-      setProfileStatus('Please fill out both fields.');
-      return;
-    }
-
-    const userRef = getUserDocRef(db, user.uid);
-
-    try {
-      // Update user document to become a creator
-      await updateDoc(userRef, {
-        displayName: profile.name,
-        promotionalURL: profile.contentUrl,
-        accountType: 'creator',
-        subscriptionStatus: 'active', // Default for now
-        totalWins: 0,
-        totalPointsReceived: 0
-      });
-      
-      // Also create an entry in the current cycle's leaderboard
-      const leaderboardRef = getCycleLeaderboardRef(db, currentCycleId, user.uid);
-      const leaderboardSnap = await getDoc(leaderboardRef);
-      
-      if (!leaderboardSnap.exists()) {
-        await setDoc(leaderboardRef, {
-          creatorId: user.uid,
-          totalPoints: 0,
-          supporterCount: 0,
-          supporters: [],
-          firstToReachCurrentScore: Date.now(),
-          lastUpdated: Date.now()
-        });
-      }
-      
-      setProfileStatus('Profile Updated Successfully! You are now a registered creator.');
-    } catch (error) {
-      console.error('Error updating creator profile:', error);
-      setProfileStatus(`Error updating profile: ${error.message}`);
-    }
-  };
-
-  const creatorHubContent = (
-    <div className="p-4 space-y-6">
-      <h2 className="text-2xl font-semibold text-white">Become a Subgames Creator</h2>
-      <p className="text-gray-200">Register your profile here to start earning points from players' wins!</p>
-
-      <form onSubmit={handleUpdateProfile} className="space-y-4 bg-white/10 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-white/20">
-        <div>
-          <label htmlFor="name" className="block text-sm font-medium text-white">Creator Name</label>
-          <input
-            type="text"
-            id="name"
-            name="name"
-            value={profile.name}
-            onChange={handleProfileChange}
-            placeholder="e.g., The Gaming Guru"
-            required
-            className="mt-1 block w-full bg-white/10 border border-white/20 text-white rounded-lg shadow-sm p-3 focus:ring-white/50 focus:border-white/50 placeholder-gray-300"
-          />
-        </div>
-        <div>
-          <label htmlFor="contentUrl" className="block text-sm font-medium text-white">Content URL (e.g., Twitch, YouTube)</label>
-          <input
-            type="url"
-            id="contentUrl"
-            name="contentUrl"
-            value={profile.contentUrl}
-            onChange={handleProfileChange}
-            placeholder="https://www.youtube.com/yourchannel"
-            required
-            className="mt-1 block w-full bg-white/10 border border-white/20 text-white rounded-lg shadow-sm p-3 focus:ring-white/50 focus:border-white/50 placeholder-gray-300"
-          />
-        </div>
-        <button
-          type="submit"
-          className="w-full py-3 px-4 border border-transparent rounded-lg shadow-md text-white bg-purple-600 hover:bg-purple-700 transition-colors font-medium text-lg"
-        >
-          Update Profile
-        </button>
-      </form>
-      {profileStatus && (
-        <p className={`mt-4 text-center font-medium ${profileStatus.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>
-          {profileStatus}
-        </p>
       )}
 
-      {/* Admin Test Button - Calculate Winner Manually */}
-      {user && (
-        <div className="mt-8 bg-yellow-500/20 backdrop-blur-sm p-6 rounded-xl border-2 border-yellow-500/50">
-          <h3 className="text-lg font-semibold text-yellow-300 mb-2">⚠️ Admin Test Function</h3>
-          <p className="text-white/80 text-sm mb-4">
-            Test the winner calculation function manually. Enter a cycle ID (e.g., 2025-11-10-18:00) or leave blank for yesterday's cycle.
-          </p>
-          <input
-            type="text"
-            id="testCycleId"
-            placeholder="2025-11-10-18:00 (optional)"
-            className="w-full mb-3 bg-white/10 border border-white/20 text-white rounded-lg shadow-sm p-3 focus:ring-yellow-500/50 focus:border-yellow-500/50 placeholder-gray-400"
-          />
-          <button
-            onClick={async () => {
-              try {
-                const cycleIdInput = document.getElementById('testCycleId').value;
-                const manualCalculateWinner = httpsCallable(functions, 'manualCalculateCycleWinner');
-                const result = await manualCalculateWinner({ cycleId: cycleIdInput || undefined });
-                alert(`Success! Winner: ${result.data.winnerName} with ${result.data.finalScore} points for cycle ${result.data.cycleId}`);
-              } catch (error) {
-                alert(`Error: ${error.message}`);
-              }
-            }}
-            className="w-full py-3 px-4 bg-yellow-500 hover:bg-yellow-600 text-black font-bold rounded-lg transition-colors"
-          >
-            🧪 Test Calculate Winner Now
-          </button>
+      {/* Creator Detail Modal */}
+      {selectedCreatorForModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedCreatorForModal(null)}>
+          <div className="bg-gradient-to-br from-[#3B5998] to-[#2A4475] rounded-2xl p-6 max-w-md w-full border-2 border-white/20 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setSelectedCreatorForModal(null)}
+              className="float-right text-white/70 hover:text-white text-2xl"
+            >
+              ×
+            </button>
+            
+            <div className="text-center mb-6">
+              {selectedCreatorForModal.photoURL ? (
+                <img 
+                  src={selectedCreatorForModal.photoURL} 
+                  alt={selectedCreatorForModal.name}
+                  className="w-24 h-24 rounded-full border-4 border-white/30 mx-auto mb-4"
+                />
+              ) : (
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-4xl border-4 border-white/30 mx-auto mb-4">
+                  👤
+                </div>
+              )}
+              
+              <h2 className="text-2xl font-bold text-white mb-2">{selectedCreatorForModal.name}</h2>
+              
+              <div className="flex items-center justify-center gap-2 mb-4">
+                <span className="text-3xl">{getPlatformIcon(selectedCreatorForModal.platform)}</span>
+                <span className="text-gray-300">{selectedCreatorForModal.platform}</span>
+              </div>
+
+              {selectedCreatorForModal.contentType && (
+                <div className="text-sm text-gray-300 bg-white/10 px-3 py-1 rounded-full inline-block mb-4">
+                  {selectedCreatorForModal.contentType} Content
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {selectedCreator === selectedCreatorForModal.id ? (
+                <div className="bg-green-500/20 border border-green-500/50 text-green-200 px-4 py-3 rounded-lg text-center font-semibold">
+                  ✓ Currently Supporting
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleSupportCreator(selectedCreatorForModal.id)}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 px-6 rounded-lg transition-all"
+                >
+                  💜 Support This Creator
+                </button>
+              )}
+
+              {selectedCreatorForModal.promotionalUrl && (
+                <button
+                  onClick={() => window.open(selectedCreatorForModal.promotionalUrl, '_blank')}
+                  className="w-full bg-white/10 hover:bg-white/20 text-white font-semibold py-3 px-6 rounded-lg transition-all border border-white/20"
+                >
+                  🔗 View Profile Links
+                </button>
+              )}
+
+              {selectedCreatorForModal.channelUrl && (
+                <button
+                  onClick={() => window.open(selectedCreatorForModal.channelUrl, '_blank')}
+                  className="w-full bg-white/10 hover:bg-white/20 text-white font-semibold py-3 px-6 rounded-lg transition-all border border-white/20"
+                >
+                  {getPlatformIcon(selectedCreatorForModal.platform)} Visit Channel
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -765,9 +1128,6 @@ const MainApp = () => {
         <div className="bg-white/10 backdrop-blur-md rounded-xl shadow-2xl p-3 md:p-6 border border-white/20">
           <h3 className="text-base md:text-xl font-semibold text-white mb-3 md:mb-4">Top Creator of the Day (Based on Points)</h3>
           <div className="border-2 border-yellow-400/50 bg-yellow-500/10 backdrop-blur-sm p-3 md:p-4 rounded-lg flex items-center shadow-md">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 md:h-8 md:w-8 text-yellow-400 mr-2 md:mr-3 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-8V7a1 1 0 112 0v3h2a1 1 0 110 2h-2v2a1 1 0 11-2 0v-2H7a1 1 0 110-2h2z" clipRule="evenodd" />
-            </svg>
             {creators[0].photoURL && (
               <img 
                 src={creators[0].photoURL} 
@@ -821,21 +1181,9 @@ const MainApp = () => {
                   </div>
                 </div>
                 
-                {/* Points and Button */}
-                <div className="flex flex-col md:flex-row items-end md:items-center gap-2 md:gap-3 ml-2 md:ml-4">
+                {/* Points */}
+                <div className="ml-2 md:ml-4">
                   <span className="text-lg md:text-2xl font-extrabold text-yellow-400">{creator.points || 0}</span>
-                  <button
-                    onClick={() => handlePickCreator(creator.id)}
-                    disabled={selectedCreator === creator.id}
-                    className={`px-3 md:px-4 py-1.5 md:py-2 font-semibold rounded-full shadow-lg transition-colors text-xs md:text-sm whitespace-nowrap ${
-                      selectedCreator === creator.id 
-                        ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white cursor-default' 
-                        : 'bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:from-purple-500 hover:to-purple-600'
-                    }`}
-                    title={selectedCreator === creator.id ? 'Currently supporting!' : 'Pick this creator'}
-                  >
-                    {selectedCreator === creator.id ? '✓ Supporting' : 'Pick'}
-                  </button>
                 </div>
               </li>
             ))}
@@ -908,10 +1256,23 @@ const MainApp = () => {
             <span className="bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent" style={{letterSpacing: '-0.02em'}}>SubGames</span>
           </h1>
           <div className="flex items-center space-x-2 md:space-x-4">
-            <span className="text-lg md:text-xl font-bold text-gray-100 bg-gradient-to-br from-yellow-500 to-yellow-600 px-3 py-1.5 md:px-4 md:py-2 rounded-full shadow-lg flex items-center gap-1 md:gap-2">
-              <span className="text-xl md:text-2xl">🪙</span>
-              <span>{playerPoints}</span>
-            </span>
+            <div className="relative flex items-center gap-2">
+              {/* Points Animation - on the left */}
+              {showPointsAnimation && (
+                <div 
+                  className="text-2xl md:text-3xl font-bold text-green-400 pointer-events-none"
+                  style={{
+                    animation: 'floatUp 3s ease-out forwards'
+                  }}
+                >
+                  +{showPointsAnimation}
+                </div>
+              )}
+              <span className="text-lg md:text-xl font-bold text-gray-100 bg-gradient-to-br from-yellow-500 to-yellow-600 px-3 py-1.5 md:px-4 md:py-2 rounded-full shadow-lg flex items-center gap-1 md:gap-2">
+                <span className="text-xl md:text-2xl">🪙</span>
+                <span>{optimisticPoints}</span>
+              </span>
+            </div>
             {selectedCreator && (
               <span className="text-xs md:text-sm text-white bg-white/20 backdrop-blur-sm px-2 py-1 md:p-2 rounded-lg truncate max-w-[100px] md:max-w-none">
                 <span className="hidden md:inline">Supporting: </span>{creators.find(c => c.id === selectedCreator)?.name || 'Creator'}
@@ -990,6 +1351,13 @@ const MainApp = () => {
           <NavItem view="creatorprofile" currentView={view} setView={setView} icon="⭐" label="My Profile" />
         </div>
       </footer>
+
+      {/* Creator Onboarding Modal */}
+      {showCreatorOnboarding && (
+        <CreatorOnboarding 
+          onComplete={() => setShowCreatorOnboarding(false)}
+        />
+      )}
     </div>
   );
 };

@@ -140,26 +140,32 @@ export const AuthProvider = ({ children }) => {
     try {
       const userRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userRef);
+      const existingData = userDoc.exists() ? userDoc.data() : null;
 
       const profileData = {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName || 'Anonymous',
         photoURL: user.photoURL || '',
-        isCreator: isCreator,
-        createdAt: userDoc.exists() ? userDoc.data().createdAt : new Date(),
+        accountType: existingData?.accountType || (isCreator ? 'creator' : 'player'),
+        isCreator: isCreator, // Keep for backward compatibility
+        createdAt: existingData?.createdAt || new Date(),
         lastLogin: new Date(),
-        totalPointsEarned: userDoc.exists() ? userDoc.data().totalPointsEarned : 0,
-        gamesPlayed: userDoc.exists() ? userDoc.data().gamesPlayed : 0,
-        gamesWon: userDoc.exists() ? userDoc.data().gamesWon : 0,
+        totalPointsEarned: existingData?.totalPointsEarned || 0,
+        gamesPlayed: existingData?.gamesPlayed || 0,
+        gamesWon: existingData?.gamesWon || 0,
       };
 
       // Additional fields for creators
       if (isCreator) {
         profileData.creatorProfile = {
-          channelUrl: userDoc.exists() ? userDoc.data().creatorProfile?.channelUrl : '',
-          bio: userDoc.exists() ? userDoc.data().creatorProfile?.bio : '',
-          referralClicks: userDoc.exists() ? userDoc.data().creatorProfile?.referralClicks : 0,
+          channelUrl: existingData?.creatorProfile?.channelUrl || '',
+          promotionalUrl: existingData?.creatorProfile?.promotionalUrl || '',
+          platform: existingData?.creatorProfile?.platform || '',
+          contentType: existingData?.creatorProfile?.contentType || '',
+          bio: existingData?.creatorProfile?.bio || '',
+          referralClicks: existingData?.creatorProfile?.referralClicks || 0,
+          profileComplete: existingData?.creatorProfile?.profileComplete || false,
         };
       }
 
@@ -189,7 +195,7 @@ export const AuthProvider = ({ children }) => {
 
   // Update creator profile
   const updateCreatorProfile = async (updates) => {
-    if (!currentUser || !userProfile?.isCreator) {
+    if (!currentUser || (userProfile?.accountType !== 'creator' && !userProfile?.isCreator)) {
       throw new Error('Only creators can update their profile');
     }
 
@@ -197,7 +203,7 @@ export const AuthProvider = ({ children }) => {
       const userRef = doc(db, 'users', currentUser.uid);
       await setDoc(userRef, {
         creatorProfile: {
-          ...userProfile.creatorProfile,
+          ...(userProfile?.creatorProfile || {}),
           ...updates,
         }
       }, { merge: true });
@@ -205,15 +211,84 @@ export const AuthProvider = ({ children }) => {
       const updatedProfile = {
         ...userProfile,
         creatorProfile: {
-          ...userProfile.creatorProfile,
+          ...(userProfile?.creatorProfile || {}),
           ...updates,
         }
       };
       setUserProfile(updatedProfile);
       
       console.log('Creator profile updated:', updates);
+      return updatedProfile;
     } catch (error) {
       console.error('Error updating creator profile:', error);
+      throw error;
+    }
+  };
+
+  // Complete creator onboarding
+  const completeCreatorOnboarding = async (channelUrl, promotionalUrl, platform, contentType) => {
+    if (!currentUser) {
+      throw new Error('Must be signed in to complete onboarding');
+    }
+
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      
+      // Extract channel name from URL if possible
+      let channelName = userProfile?.displayName || currentUser.displayName || 'Creator';
+      if (channelUrl) {
+        // Simple extraction - you can make this more sophisticated
+        const urlMatch = channelUrl.match(/(?:youtube\.com\/(?:c\/|channel\/|@)?|twitch\.tv\/|kick\.com\/)([^\/\?]+)/i);
+        if (urlMatch) {
+          channelName = urlMatch[1];
+        }
+      }
+
+      const updates = {
+        displayName: channelName,
+        creatorProfile: {
+          ...(userProfile?.creatorProfile || {}),
+          channelUrl,
+          promotionalUrl,
+          platform: platform || '',
+          contentType: contentType || '',
+          profileComplete: true,
+        }
+      };
+
+      await setDoc(userRef, updates, { merge: true });
+
+      // Auto-register creator to current cycle's leaderboard
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const currentCycleId = `${year}-${month}-${day}-18:00`;
+
+      const leaderboardRef = doc(db, 'cycles', currentCycleId, 'leaderboard', currentUser.uid);
+      const leaderboardSnap = await getDoc(leaderboardRef);
+      
+      if (!leaderboardSnap.exists()) {
+        await setDoc(leaderboardRef, {
+          creatorId: currentUser.uid,
+          totalPoints: 0,
+          supporterCount: 0,
+          supporters: [],
+          firstToReachCurrentScore: Date.now(),
+          lastUpdated: Date.now()
+        });
+      }
+
+      const updatedProfile = {
+        ...(userProfile || {}),
+        ...updates,
+      };
+      setUserProfile(updatedProfile);
+      
+      console.log('Creator onboarding completed and added to leaderboard:', updates);
+      return updatedProfile;
+    } catch (error) {
+      console.error('Error completing creator onboarding:', error);
       throw error;
     }
   };
@@ -226,6 +301,7 @@ export const AuthProvider = ({ children }) => {
     signInWithApple,
     signOut,
     updateCreatorProfile,
+    completeCreatorOnboarding,
   };
 
   return (

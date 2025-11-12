@@ -11,6 +11,9 @@ function CreatorProfile() {
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' or 'settings'
   const [isEditing, setIsEditing] = useState(false);
   const [channelUrl, setChannelUrl] = useState('');
+  const [promotionalUrl, setPromotionalUrl] = useState('');
+  const [platform, setPlatform] = useState('');
+  const [contentType, setContentType] = useState('');
   const [bio, setBio] = useState('');
   const [gameHistory, setGameHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +31,9 @@ function CreatorProfile() {
     const loadData = async () => {
       if (userProfile?.creatorProfile) {
         setChannelUrl(userProfile.creatorProfile.channelUrl || '');
+        setPromotionalUrl(userProfile.creatorProfile.promotionalUrl || '');
+        setPlatform(userProfile.creatorProfile.platform || '');
+        setContentType(userProfile.creatorProfile.contentType || '');
         setBio(userProfile.creatorProfile.bio || '');
       }
       
@@ -107,6 +113,9 @@ function CreatorProfile() {
       setSaving(true);
       await updateCreatorProfile({
         channelUrl,
+        promotionalUrl,
+        platform,
+        contentType,
         bio,
       });
       setIsEditing(false);
@@ -228,6 +237,8 @@ function CreatorProfile() {
     ? ((userProfile.gamesWon / userProfile.gamesPlayed) * 100).toFixed(1) 
     : 0;
 
+  const isCreator = userProfile?.accountType === 'creator' || userProfile?.isCreator;
+
   return (
     <div className="creator-profile-container">
       {/* Tab Navigation */}
@@ -275,7 +286,7 @@ function CreatorProfile() {
               {showEmail ? '👁️' : '👁️'}
             </button>
           </div>
-          <span className="creator-badge">⭐ Creator</span>
+          <span className="creator-badge">{isCreator ? '⭐ Creator' : '🎮 Player'}</span>
         </div>
       </div>
 
@@ -301,17 +312,20 @@ function CreatorProfile() {
           <div className="stat-value">{userProfile.totalPointsEarned || 0}</div>
           <div className="stat-label">Total Points</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon">🔗</div>
-          <div className="stat-value">
-            {userProfile.creatorProfile?.referralClicks || 0}
+        {isCreator && (
+          <div className="stat-card">
+            <div className="stat-icon">🔗</div>
+            <div className="stat-value">
+              {userProfile.creatorProfile?.referralClicks || 0}
+            </div>
+            <div className="stat-label">Channel Visits</div>
           </div>
-          <div className="stat-label">Channel Visits</div>
-        </div>
+        )}
       </div>
 
-      {/* Creator Profile Section */}
-      <div className="profile-section">
+      {/* Creator Profile Section - Only for Creators */}
+      {isCreator && (
+        <div className="profile-section">
         <div className="section-header">
           <h2>Creator Profile</h2>
           {!isEditing ? (
@@ -327,6 +341,9 @@ function CreatorProfile() {
                 onClick={() => {
                   setIsEditing(false);
                   setChannelUrl(userProfile.creatorProfile?.channelUrl || '');
+                  setPromotionalUrl(userProfile.creatorProfile?.promotionalUrl || '');
+                  setPlatform(userProfile.creatorProfile?.platform || '');
+                  setContentType(userProfile.creatorProfile?.contentType || '');
                   setBio(userProfile.creatorProfile?.bio || '');
                 }} 
                 className="btn-cancel"
@@ -367,6 +384,75 @@ function CreatorProfile() {
           </div>
 
           <div className="field-group">
+            <label>Promotional URL (Linktree, etc.)</label>
+            {isEditing ? (
+              <input
+                type="url"
+                value={promotionalUrl}
+                onChange={(e) => setPromotionalUrl(e.target.value)}
+                placeholder="https://linktr.ee/yourprofile"
+                className="input-field"
+              />
+            ) : (
+              <div className="field-value">
+                {promotionalUrl ? (
+                  <a href={promotionalUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>
+                    {promotionalUrl}
+                  </a>
+                ) : (
+                  <span className="empty-value">Not set</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="field-group">
+            <label>Platform</label>
+            {isEditing ? (
+              <select
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value)}
+                className="input-field"
+              >
+                <option value="">Select platform</option>
+                <option value="YouTube">YouTube</option>
+                <option value="Twitch">Twitch</option>
+                <option value="Kick">Kick</option>
+                <option value="TikTok">TikTok</option>
+                <option value="Other">Other</option>
+              </select>
+            ) : (
+              <div className="field-value">
+                {platform || <span className="empty-value">Not set</span>}
+              </div>
+            )}
+          </div>
+
+          <div className="field-group">
+            <label>Content Type</label>
+            {isEditing ? (
+              <select
+                value={contentType}
+                onChange={(e) => setContentType(e.target.value)}
+                className="input-field"
+              >
+                <option value="">Select type</option>
+                <option value="Gaming">Gaming</option>
+                <option value="IRL">IRL</option>
+                <option value="Music">Music</option>
+                <option value="Art">Art</option>
+                <option value="Talk">Talk/Podcast</option>
+                <option value="Education">Education</option>
+                <option value="Other">Other</option>
+              </select>
+            ) : (
+              <div className="field-value">
+                {contentType || <span className="empty-value">Not set</span>}
+              </div>
+            )}
+          </div>
+
+          <div className="field-group">
             <label>Bio</label>
             {isEditing ? (
               <textarea
@@ -384,6 +470,7 @@ function CreatorProfile() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Game History */}
       <div className="profile-section">

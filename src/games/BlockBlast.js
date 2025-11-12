@@ -40,6 +40,7 @@ const BlockBlast = ({ onGameWin }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [gameOver, setGameOver] = useState(false);
   const [hasWon, setHasWon] = useState(false);
+  const [explosions, setExplosions] = useState([]); // Track explosion animations
 
   // Generate 3 random blocks
   const generateBlocks = useCallback(() => {
@@ -106,6 +107,36 @@ const BlockBlast = ({ onGameWin }) => {
         colsToClear.push(c);
         clearedLines++;
       }
+    }
+
+    // Trigger explosion animations
+    const newExplosions = [];
+    rowsToClear.forEach(r => {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        newExplosions.push({
+          id: `${Date.now()}-${r}-${c}`,
+          row: r,
+          col: c
+        });
+      }
+    });
+    colsToClear.forEach(c => {
+      for (let r = 0; r < GRID_SIZE; r++) {
+        // Avoid duplicates from row/col intersections
+        if (!rowsToClear.includes(r)) {
+          newExplosions.push({
+            id: `${Date.now()}-${r}-${c}`,
+            row: r,
+            col: c
+          });
+        }
+      }
+    });
+
+    if (newExplosions.length > 0) {
+      setExplosions(newExplosions);
+      // Clear explosions after animation completes
+      setTimeout(() => setExplosions([]), 600);
     }
 
     // Clear rows and columns
@@ -323,18 +354,33 @@ const BlockBlast = ({ onGameWin }) => {
         }}
       >
         {previewGrid.map((row, rowIndex) =>
-          row.map((cell, colIndex) => (
-            <div
-              key={`${rowIndex}-${colIndex}`}
-              className={`w-10 h-10 rounded transition-all ${
-                cell === 1 
-                  ? 'bg-purple-600 shadow-lg' 
-                  : cell === 2 
-                  ? 'bg-green-500 opacity-60'
-                  : 'bg-gray-700'
-              }`}
-            />
-          ))
+          row.map((cell, colIndex) => {
+            const hasExplosion = explosions.some(e => e.row === rowIndex && e.col === colIndex);
+            
+            return (
+              <div
+                key={`${rowIndex}-${colIndex}`}
+                className={`w-10 h-10 rounded transition-all relative ${
+                  cell === 1 
+                    ? 'bg-purple-600 shadow-lg' 
+                    : cell === 2 
+                    ? 'bg-green-500 opacity-60'
+                    : 'bg-gray-700'
+                }`}
+              >
+                {/* Explosion Animation */}
+                {hasExplosion && (
+                  <>
+                    <div className="absolute inset-0 bg-yellow-400 rounded animate-ping opacity-75" />
+                    <div className="absolute inset-0 bg-orange-500 rounded animate-pulse" />
+                    <div className="absolute inset-0 flex items-center justify-center text-2xl animate-bounce">
+                      💥
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
 

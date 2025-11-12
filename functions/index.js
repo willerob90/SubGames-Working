@@ -71,7 +71,17 @@ exports.submitGameResult = functions.https.onCall(async (data, context) => {
   }
   
   const cycleId = getCycleId();
-  const pointsAwarded = 1;
+  
+  // Determine points based on game type
+  const gamePoints = {
+    'reaction': 1,
+    'whackAMole': 3,
+    'blockBlast': 5,
+    'memoryFlip': 6,
+    'colorMatch': 8,
+    'patternPro': 10
+  };
+  const pointsAwarded = gamePoints[session.gameType] || 1;
   
   // Get user's pick for this cycle
   const pickDoc = await db.collection('cycles').doc(cycleId).collection('picks').doc(userId).get();
