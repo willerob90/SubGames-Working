@@ -22,6 +22,7 @@ function CreatorProfile() {
   const [selectedPlatform, setSelectedPlatform] = useState('');
   const [connectedPlatforms, setConnectedPlatforms] = useState([]);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -260,7 +261,20 @@ function CreatorProfile() {
         </div>
         <div className="profile-info">
           <h1>{userProfile.displayName}</h1>
-          <p className="profile-email">{userProfile.email}</p>
+          <div className="email-container">
+            {showEmail ? (
+              <p className="profile-email">{userProfile.email}</p>
+            ) : (
+              <p className="profile-email">••••••••••••••</p>
+            )}
+            <button 
+              className="btn-toggle-email" 
+              onClick={() => setShowEmail(!showEmail)}
+              title={showEmail ? "Hide email" : "Show email"}
+            >
+              {showEmail ? '👁️' : '👁️'}
+            </button>
+          </div>
           <span className="creator-badge">⭐ Creator</span>
         </div>
       </div>

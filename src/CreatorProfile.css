@@ -255,9 +255,32 @@
   font-size: 2rem;
 }
 
+.email-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
 .profile-email {
   color: #666;
-  margin: 0 0 10px 0;
+  margin: 0;
+}
+
+.btn-toggle-email {
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  opacity: 0.6;
+}
+
+.btn-toggle-email:hover {
+  opacity: 1;
+  background: rgba(102, 126, 234, 0.1);
 }
 
 .creator-badge {
