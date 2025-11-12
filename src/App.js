@@ -331,8 +331,14 @@ const MainApp = () => {
       setReactionTestState('result');
 
       if (timeElapsed < 500) {
-        if (!user || !gameSessionId || !selectedCreator) {
-          setProfileStatus('Please pick a creator first before playing!');
+        if (!user || !gameSessionId) {
+          setProfileStatus('Error: Game session not started properly');
+          return;
+        }
+
+        // Check if creator is selected
+        if (!selectedCreator) {
+          setProfileStatus('🎉 Nice! Pick a creator to start earning points for wins like this!');
           return;
         }
 
@@ -372,11 +378,13 @@ const MainApp = () => {
 
   // Handle Block Blast game win
   const handleBlockBlastWin = useCallback(async (finalScore) => {
-    if (!user || !selectedCreator) {
-      console.log('Cannot award points - missing requirements:', { 
-        hasUser: !!user, 
-        hasCreator: !!selectedCreator
-      });
+    if (!user) {
+      console.log('Cannot award points - user not logged in');
+      return;
+    }
+
+    if (!selectedCreator) {
+      alert('🎉 Great job! Pick a creator from the Creator Hub to start earning points!');
       return;
     }
 
@@ -421,11 +429,13 @@ const MainApp = () => {
 
   // Handle Color Match game win
   const handleColorMatchWin = useCallback(async (level) => {
-    if (!user || !selectedCreator) {
-      console.log('Cannot award points - missing requirements:', { 
-        hasUser: !!user, 
-        hasCreator: !!selectedCreator
-      });
+    if (!user) {
+      console.log('Cannot award points - user not logged in');
+      return;
+    }
+
+    if (!selectedCreator) {
+      alert('🎉 Amazing! Pick a creator from the Creator Hub to start earning points!');
       return;
     }
 
@@ -470,11 +480,13 @@ const MainApp = () => {
 
   // Handle Memory Flip game win
   const handleMemoryFlipWin = useCallback(async (points) => {
-    if (!user || !selectedCreator) {
-      console.log('Cannot award points - missing requirements:', { 
-        hasUser: !!user, 
-        hasCreator: !!selectedCreator
-      });
+    if (!user) {
+      console.log('Cannot award points - user not logged in');
+      return;
+    }
+
+    if (!selectedCreator) {
+      alert('🎉 Excellent memory! Pick a creator from the Creator Hub to start earning points!');
       return;
     }
 
@@ -519,11 +531,13 @@ const MainApp = () => {
 
   // Handle Pattern Pro game win
   const handlePatternProWin = useCallback(async (points) => {
-    if (!user || !selectedCreator) {
-      console.log('Cannot award points - missing requirements:', { 
-        hasUser: !!user, 
-        hasCreator: !!selectedCreator
-      });
+    if (!user) {
+      console.log('Cannot award points - user not logged in');
+      return;
+    }
+
+    if (!selectedCreator) {
+      alert('🎉 Pattern master! Pick a creator from the Creator Hub to start earning points!');
       return;
     }
 
@@ -569,11 +583,13 @@ const MainApp = () => {
   // Handle Whack-a-Mole game win
   // Handle Whack-a-Mole game win
   const handleWhackAMoleWin = useCallback(async (points) => {
-    if (!user || !selectedCreator) {
-      console.log('Cannot award points - missing requirements:', { 
-        hasUser: !!user, 
-        hasCreator: !!selectedCreator
-      });
+    if (!user) {
+      console.log('Cannot award points - user not logged in');
+      return;
+    }
+
+    if (!selectedCreator) {
+      alert('🎉 Quick reflexes! Pick a creator from the Creator Hub to start earning points!');
       return;
     }
 
@@ -798,21 +814,15 @@ const MainApp = () => {
 
     return (
       <div className="space-y-6">
-        <div className="text-center">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">Game Library</h2>
-          <p className="text-gray-400">Choose a game to play and earn points</p>
-        </div>
-
         {!selectedCreator && userProfile?.accountType === 'player' && (
-          <div className="bg-yellow-500/20 backdrop-blur-sm border border-yellow-400/30 rounded-lg p-6 text-center">
-            <div className="text-5xl mb-3">🔒</div>
-            <h3 className="text-xl font-bold text-yellow-100 mb-2">Games Locked</h3>
-            <p className="text-yellow-100 mb-4">
-              Pick a creator from the Creator Hub to unlock games and start earning points!
+          <div className="bg-blue-500/20 backdrop-blur-sm border border-blue-400/30 rounded-lg p-4 text-center">
+            <div className="text-3xl mb-2">�</div>
+            <p className="text-blue-100 text-sm md:text-base">
+              <strong>Reminder:</strong> Pick a creator from the Creator Hub to make your points count!
             </p>
             <button
               onClick={() => setView('creatorhub')}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-2 px-6 rounded-lg transition"
+              className="mt-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-2 px-4 rounded-lg transition text-sm"
             >
               Choose a Creator
             </button>
@@ -821,26 +831,15 @@ const MainApp = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           {games.map((game) => {
-            const isLocked = !selectedCreator && userProfile?.accountType === 'player';
-            
             return (
               <button
                 key={game.id}
-                onClick={() => !isLocked && setSelectedGame(game.id)}
-                disabled={isLocked}
-                className={`group relative bg-white/10 backdrop-blur-sm rounded-2xl overflow-hidden ${
-                  isLocked 
-                    ? 'opacity-50 cursor-not-allowed' 
-                    : 'hover:scale-105 hover:shadow-2xl hover:border-white/40'
-                } transition-all duration-300 shadow-xl border-2 border-white/20`}
+                onClick={() => setSelectedGame(game.id)}
+                className="group relative bg-white/10 backdrop-blur-sm rounded-2xl overflow-hidden hover:scale-105 hover:shadow-2xl hover:border-white/40 transition-all duration-300 shadow-xl border-2 border-white/20"
               >
-                <div className={`absolute inset-0 bg-gradient-to-br ${game.color} opacity-10 ${!isLocked && 'group-hover:opacity-20'} transition-opacity`}></div>
+                <div className={`absolute inset-0 bg-gradient-to-br ${game.color} opacity-10 group-hover:opacity-20 transition-opacity`}></div>
                 
                 <div className="relative p-6 md:p-8 text-left">
-                  {isLocked && (
-                    <div className="absolute top-4 right-4 text-3xl">🔒</div>
-                  )}
-                  
                   <div className="text-6xl md:text-7xl mb-4">{game.icon}</div>
                   
                   <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">
@@ -855,11 +854,9 @@ const MainApp = () => {
                     <span className={`px-3 py-1 rounded-full bg-gradient-to-r ${game.color} text-white text-sm font-semibold`}>
                       Earn {game.points}
                     </span>
-                    {!isLocked && (
-                      <span className="text-white font-semibold group-hover:translate-x-2 transition-transform">
-                        Play Now →
-                      </span>
-                    )}
+                    <span className="text-white font-semibold group-hover:translate-x-2 transition-transform">
+                      Play Now →
+                    </span>
                   </div>
                 </div>
               </button>
@@ -945,11 +942,6 @@ const MainApp = () => {
 
   const creatorHubContent = (
     <div className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">Creator Hub</h2>
-        <p className="text-gray-300">Browse and support your favorite creators</p>
-      </div>
-
       {allCreators.length === 0 ? (
         <div className="text-center py-12">
           <div className="text-6xl mb-4">🔍</div>
@@ -1120,13 +1112,14 @@ const MainApp = () => {
 
   const leaderboardContent = (
     <div className="p-2 md:p-4 space-y-4 md:space-y-6">
-      <h2 className="text-xl md:text-3xl font-extrabold text-white border-b border-white/20 pb-2">Creator Leaderboard</h2>
+      <div className="text-center">
+        <h2 className="text-xl md:text-3xl font-extrabold text-white pb-2">Creator Leaderboard</h2>
+      </div>
 
       {creators.length === 0 ? (
         <p className="text-white/60 text-sm md:text-base">No creators registered yet. Be the first!</p>
       ) : (
         <div className="bg-white/10 backdrop-blur-md rounded-xl shadow-2xl p-3 md:p-6 border border-white/20">
-          <h3 className="text-base md:text-xl font-semibold text-white mb-3 md:mb-4">Top Creator of the Day (Based on Points)</h3>
           <div className="border-2 border-yellow-400/50 bg-yellow-500/10 backdrop-blur-sm p-3 md:p-4 rounded-lg flex items-center shadow-md">
             {creators[0].photoURL && (
               <img 
@@ -1347,7 +1340,7 @@ const MainApp = () => {
         <div className="max-w-4xl mx-auto flex justify-around items-center">
           <NavItem view="minigame" currentView={view} setView={setView} icon="🎮" label="Games" />
           <NavItem view="leaderboard" currentView={view} setView={setView} icon="🏆" label="Leaderboard" />
-          <NavItem view="creatorhub" currentView={view} setView={setView} icon="🧑‍💻" label="Creator Hub" />
+          <NavItem view="creatorhub" currentView={view} setView={setView} icon="🧑‍💻" label="Creators" />
           <NavItem view="creatorprofile" currentView={view} setView={setView} icon="⭐" label="My Profile" />
         </div>
       </footer>
@@ -1425,3 +1418,4 @@ const AppContent = ({ hasCompletedWelcome, setHasCompletedWelcome }) => {
 };
 
 export default App;
+
