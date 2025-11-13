@@ -253,25 +253,31 @@ const MainApp = () => {
       if (!db || !isAuthReady) return;
 
       try {
-        // Calculate yesterday's cycle ID
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const year = yesterday.getFullYear();
-        const month = String(yesterday.getMonth() + 1).padStart(2, '0');
-        const day = String(yesterday.getDate()).padStart(2, '0');
-        const yesterdayCycleId = `${year}-${month}-${day}-18:00`;
+        // Get the most recent completed cycle (today's if after 6pm, yesterday's if before 6pm)
+        const now = new Date();
+        const currentHour = now.getHours();
+        
+        // If it's before 6pm, show yesterday's winner. If after 6pm, show today's winner.
+        const daysAgo = currentHour < 18 ? 1 : 0;
+        const cycleDate = new Date();
+        cycleDate.setDate(cycleDate.getDate() - daysAgo);
+        
+        const year = cycleDate.getFullYear();
+        const month = String(cycleDate.getMonth() + 1).padStart(2, '0');
+        const day = String(cycleDate.getDate()).padStart(2, '0');
+        const completedCycleId = `${year}-${month}-${day}-18:00`;
 
-        // Load yesterday's winner
-        const winnerRef = doc(db, 'cycleWinners', yesterdayCycleId);
+        // Load the completed cycle's winner
+        const winnerRef = doc(db, 'cycleWinners', completedCycleId);
         const winnerSnap = await getDoc(winnerRef);
         
         if (winnerSnap.exists()) {
           setCycleWinner(winnerSnap.data());
         }
 
-        // Check if user is eligible for a pity point from yesterday
+        // Check if user is eligible for a pity point from the completed cycle
         if (user) {
-          const eligibilityRef = doc(db, 'cycles', yesterdayCycleId, 'pityPointsEligible', user.uid);
+          const eligibilityRef = doc(db, 'cycles', completedCycleId, 'pityPointsEligible', user.uid);
           const eligibilitySnap = await getDoc(eligibilityRef);
           
           if (eligibilitySnap.exists() && eligibilitySnap.data().eligibleForPityPoint && !eligibilitySnap.data().clickedWinnerLink) {
@@ -1244,20 +1250,26 @@ const MainApp = () => {
     if (!cycleWinner || !cycleWinner.promotionalURL) return;
 
     try {
-      // Calculate yesterday's cycle ID
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const year = yesterday.getFullYear();
-      const month = String(yesterday.getMonth() + 1).padStart(2, '0');
-      const day = String(yesterday.getDate()).padStart(2, '0');
-      const yesterdayCycleId = `${year}-${month}-${day}-18:00`;
+      // Get the completed cycle (same logic as loadWinnerAndPityPoints)
+      const now = new Date();
+      const currentHour = now.getHours();
+      const daysAgo = currentHour < 18 ? 1 : 0;
+      const cycleDate = new Date();
+      cycleDate.setDate(cycleDate.getDate() - daysAgo);
+      
+      const year = cycleDate.getFullYear();
+      const month = String(cycleDate.getMonth() + 1).padStart(2, '0');
+      const day = String(cycleDate.getDate()).padStart(2, '0');
+      const completedCycleId = `${year}-${month}-${day}-18:00`;
 
       // Call cloud function to track click and apply pity point
       const clickWinnerLink = httpsCallable(functions, 'clickWinnerLink');
       const result = await clickWinnerLink({
-        cycleId: yesterdayCycleId,
+        cycleId: completedCycleId,
         winnerUrl: cycleWinner.promotionalURL
       });
+
+      console.log('clickWinnerLink result:', result.data);
 
       if (result.data.pityPointApplied) {
         alert(`Pity point applied! +${result.data.pointsAwarded} point added to your chosen creator!`);

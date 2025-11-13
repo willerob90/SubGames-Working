@@ -251,51 +251,116 @@ exports.submitGameResult = functions.https.onCall(async (data, context) => {
   return { success: true, pointsAwarded, creatorId };
 });
 
+// Helper function to calculate winner for a cycle
+async function calculateWinnerForCycle(cycleId) {
+  // Get all leaderboard entries for the cycle
+  const leaderboardSnapshot = await db.collection('cycles')
+    .doc(cycleId)
+    .collection('leaderboard')
+    .orderBy('totalPoints', 'desc')
+    .orderBy('firstToReachCurrentScore', 'asc')
+    .limit(1)
+    .get();
+  
+  if (leaderboardSnapshot.empty) {
+    console.log('No entries for cycle:', cycleId);
+    return { success: false, message: 'No entries for this cycle' };
+  }
+  
+  const winnerDoc = leaderboardSnapshot.docs[0];
+  const winnerData = winnerDoc.data();
+  const winnerId = winnerData.creatorId;
+  
+  // Get winner's user profile
+  const winnerProfile = await db.collection('users').doc(winnerId).get();
+  const profile = winnerProfile.data();
+  
+  // Record winner
+  await db.collection('cycleWinners').doc(cycleId).set({
+    winnerId,
+    winnerName: profile.displayName || 'Unknown',
+    winnerPhotoURL: profile.photoURL || '',
+    promotionalURL: profile.promotionalURL || '',
+    finalScore: winnerData.totalPoints,
+    supporterCount: winnerData.supporterCount,
+    firstToReachScore: winnerData.firstToReachCurrentScore,
+    announcedAt: admin.firestore.FieldValue.serverTimestamp(),
+    cycleStartTime: admin.firestore.Timestamp.fromDate(new Date(cycleId.replace('-18:00', 'T18:00:00-06:00'))),
+    cycleEndTime: admin.firestore.FieldValue.serverTimestamp()
+  });
+  
+  console.log('Winner calculated for cycle:', cycleId, 'Winner:', winnerId);
+  return { success: true, cycleId, winnerId, winnerName: profile.displayName };
+}
+
 // Function 3: Calculate Cycle Winner (run at 6pm CST daily)
 exports.calculateCycleWinner = functions.pubsub.schedule('0 18 * * *')
   .timeZone('America/Chicago')
   .onRun(async (context) => {
-    const yesterdayCycleId = getCycleId(1);
-    
-    // Get all leaderboard entries for yesterday
-    const leaderboardSnapshot = await db.collection('cycles')
-      .doc(yesterdayCycleId)
-      .collection('leaderboard')
-      .orderBy('totalPoints', 'desc')
-      .orderBy('firstToReachCurrentScore', 'asc')
-      .limit(1)
-      .get();
-    
-    if (leaderboardSnapshot.empty) {
-      console.log('No entries for cycle:', yesterdayCycleId);
-      return null;
-    }
-    
-    const winnerDoc = leaderboardSnapshot.docs[0];
-    const winnerData = winnerDoc.data();
-    const winnerId = winnerData.creatorId;
-    
-    // Get winner's user profile
-    const winnerProfile = await db.collection('users').doc(winnerId).get();
-    const profile = winnerProfile.data();
-    
-    // Record winner
-    await db.collection('cycleWinners').doc(yesterdayCycleId).set({
-      winnerId,
-      winnerName: profile.displayName || 'Unknown',
-      winnerPhotoURL: profile.photoURL || '',
-      promotionalURL: profile.promotionalURL || '',
-      finalScore: winnerData.totalPoints,
-      supporterCount: winnerData.supporterCount,
-      firstToReachScore: winnerData.firstToReachCurrentScore,
-      announcedAt: admin.firestore.FieldValue.serverTimestamp(),
-      cycleStartTime: admin.firestore.Timestamp.fromDate(new Date(yesterdayCycleId.replace('-18:00', 'T18:00:00-06:00'))),
-      cycleEndTime: admin.firestore.FieldValue.serverTimestamp()
-    });
-    
-    console.log('Winner calculated for cycle:', yesterdayCycleId, 'Winner:', winnerId);
+    // Get the cycle that is ending RIGHT NOW (current cycle ID at 6pm)
+    const currentCycleId = getCycleId(0);
+    await calculateWinnerForCycle(currentCycleId);
     return null;
   });
+
+// Manual trigger function for admin use
+exports.manualCalculateWinner = functions.https.onCall(async (data, context) => {
+  // Optional: Add admin check here
+  const cycleId = data.cycleId || getCycleId(0);
+  return await calculateWinnerForCycle(cycleId);
+});
+
+// Manual trigger for pity points (admin use)
+exports.manualAwardPityPoints = functions.https.onCall(async (data, context) => {
+  const cycleId = data.cycleId || getCycleId(0);
+  
+  // Get winner data
+  const winnerSnap = await db.collection('cycleWinners').doc(cycleId).get();
+  if (!winnerSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Winner not found for this cycle');
+  }
+  
+  const winnerData = winnerSnap.data();
+  const winnerId = winnerData.winnerId;
+  
+  // Get all picks for this cycle where user didn't pick the winner
+  const picksSnapshot = await db.collection('cycles')
+    .doc(cycleId)
+    .collection('picks')
+    .where('creatorId', '!=', winnerId)
+    .get();
+  
+  const batch = db.batch();
+  let count = 0;
+  
+  picksSnapshot.forEach((doc) => {
+    const userId = doc.id;
+    const pickData = doc.data();
+    
+    const pityPointRef = db.collection('cycles')
+      .doc(cycleId)
+      .collection('pityPointsEligible')
+      .doc(userId);
+    
+    batch.set(pityPointRef, {
+      userId,
+      eligibleForPityPoint: true,
+      clickedWinnerLink: false,
+      winnerId,
+      theirCreatorId: pickData.creatorId
+    });
+    count++;
+  });
+  
+  await batch.commit();
+  
+  return {
+    success: true,
+    cycleId,
+    eligibleUsers: count,
+    message: `Pity point eligibility set for ${count} users`
+  };
+});
 
 // Function 4: Award Pity Points (run after winner calculation)
 exports.awardPityPoints = functions.firestore
@@ -320,21 +385,20 @@ exports.awardPityPoints = functions.firestore
       
       const pityPointRef = db.collection('cycles')
         .doc(cycleId)
-        .collection('pityPoints')
+        .collection('pityPointsEligible')
         .doc(userId);
       
       batch.set(pityPointRef, {
         userId,
-        earnedPityPoint: true,
+        eligibleForPityPoint: true,
         clickedWinnerLink: false,
         winnerId,
-        theirCreatorId: pickData.creatorId,
-        appliedToNextCycle: false
+        theirCreatorId: pickData.creatorId
       });
     });
     
     await batch.commit();
-    console.log('Pity points awarded for cycle:', cycleId);
+    console.log('Pity point eligibility tracked for cycle:', cycleId);
   });
 
 // Function 5: Apply Pity Points to Next Cycle
@@ -422,6 +486,79 @@ exports.applyPityPoints = functions.https.onCall(async (data, context) => {
   });
   
   return { success: true, pointsApplied: 1, toCreator: currentCreatorId };
+});
+
+// Function 6.5: Click Winner Link (with pity point)
+exports.clickWinnerLink = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+  }
+  
+  const { cycleId, winnerUrl } = data;
+  const userId = context.auth.uid;
+  
+  // Check if user is eligible for pity point
+  const eligibilityRef = db.collection('cycles')
+    .doc(cycleId)
+    .collection('pityPointsEligible')
+    .doc(userId);
+  
+  const eligibilityDoc = await eligibilityRef.get();
+  
+  if (!eligibilityDoc.exists) {
+    // User is not eligible (maybe they picked the winner)
+    return { success: true, pityPointApplied: false, message: 'Not eligible for pity point' };
+  }
+  
+  const eligibilityData = eligibilityDoc.data();
+  
+  if (!eligibilityData.eligibleForPityPoint) {
+    return { success: true, pityPointApplied: false, message: 'Not eligible for pity point' };
+  }
+  
+  if (eligibilityData.clickedWinnerLink) {
+    return { success: true, pityPointApplied: false, message: 'Already claimed pity point' };
+  }
+  
+  // Get user's current pick to apply the pity point
+  const userPickRef = db.collection('cycles')
+    .doc(cycleId)
+    .collection('picks')
+    .doc(userId);
+  
+  const userPickDoc = await userPickRef.get();
+  
+  if (!userPickDoc.exists) {
+    return { success: true, pityPointApplied: false, message: 'No creator pick found' };
+  }
+  
+  const creatorId = userPickDoc.data().creatorId;
+  
+  // Apply pity point to the leaderboard
+  await db.runTransaction(async (transaction) => {
+    const leaderboardRef = db.collection('cycles')
+      .doc(cycleId)
+      .collection('leaderboard')
+      .doc(creatorId);
+    
+    // Update leaderboard
+    transaction.update(leaderboardRef, {
+      totalPoints: admin.firestore.FieldValue.increment(1)
+    });
+    
+    // Update user's pick points
+    transaction.update(userPickRef, {
+      pointsEarned: admin.firestore.FieldValue.increment(1)
+    });
+    
+    // Mark as clicked
+    transaction.update(eligibilityRef, {
+      clickedWinnerLink: true,
+      clickedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+  });
+  
+  return { success: true, pityPointApplied: true, pointsAwarded: 1 };
 });
 
 // Function 7: Track Referral Click
