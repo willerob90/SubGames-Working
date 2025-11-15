@@ -163,13 +163,17 @@ export const AuthProvider = ({ children }) => {
       const userDoc = await getDoc(userRef);
       const existingData = userDoc.exists() ? userDoc.data() : null;
 
+      // If user is signing in as creator, upgrade them to creator
+      // Otherwise, keep existing account type or set as player for new users
+      const accountType = isCreator ? 'creator' : (existingData?.accountType || 'player');
+
       const profileData = {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName || 'Anonymous',
         photoURL: user.photoURL || '',
-        accountType: existingData?.accountType || (isCreator ? 'creator' : 'player'),
-        isCreator: isCreator, // Keep for backward compatibility
+        accountType: accountType,
+        isCreator: isCreator || existingData?.isCreator || false, // Upgrade if signing in as creator
         createdAt: existingData?.createdAt || new Date(),
         lastLogin: new Date(),
         totalPointsEarned: existingData?.totalPointsEarned || 0,
@@ -382,6 +386,34 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Upgrade existing player account to creator
+  const upgradeToCreator = async () => {
+    if (!currentUser) {
+      throw new Error('Must be signed in to upgrade to creator');
+    }
+
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      await setDoc(userRef, {
+        accountType: 'creator',
+        isCreator: true,
+      }, { merge: true });
+
+      const updatedProfile = {
+        ...userProfile,
+        accountType: 'creator',
+        isCreator: true,
+      };
+      setUserProfile(updatedProfile);
+      
+      console.log('Account upgraded to creator');
+      return updatedProfile;
+    } catch (error) {
+      console.error('Error upgrading to creator:', error);
+      throw error;
+    }
+  };
+
   const value = {
     currentUser,
     userProfile,
@@ -391,6 +423,7 @@ export const AuthProvider = ({ children }) => {
     signOut,
     updateCreatorProfile,
     completeCreatorOnboarding,
+    upgradeToCreator,
   };
 
   return (

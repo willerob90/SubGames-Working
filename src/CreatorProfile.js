@@ -7,7 +7,7 @@ import { signOut } from 'firebase/auth';
 import './CreatorProfile.css';
 
 function CreatorProfile() {
-  const { currentUser, userProfile, updateCreatorProfile } = useAuth();
+  const { currentUser, userProfile, updateCreatorProfile, upgradeToCreator } = useAuth();
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' or 'settings'
   const [isEditing, setIsEditing] = useState(false);
   const [channelUrl, setChannelUrl] = useState('');
@@ -163,6 +163,23 @@ function CreatorProfile() {
     } catch (error) {
       console.error('Error saving settings:', error);
       alert('Failed to save settings: ' + error.message);
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const handleUpgradeToCreator = async () => {
+    // eslint-disable-next-line no-restricted-globals
+    if (!confirm('Upgrade your account to Creator? You can then complete your creator profile and appear on the leaderboard.')) return;
+    
+    try {
+      setSettingsSaving(true);
+      await upgradeToCreator();
+      alert('Account upgraded to Creator! You can now complete your creator profile in the Profile tab.');
+      window.location.reload(); // Refresh to show creator options
+    } catch (error) {
+      console.error('Error upgrading to creator:', error);
+      alert('Failed to upgrade account: ' + error.message);
     } finally {
       setSettingsSaving(false);
     }
@@ -605,6 +622,34 @@ function CreatorProfile() {
               placeholder="https://example.com/your-picture.jpg"
             />
           </div>
+
+          {/* Upgrade to Creator (only for players) */}
+          {!isCreator && (
+            <div className="profile-section">
+              <h3>⭐ Become a Creator</h3>
+              <p className="section-description">
+                Upgrade your account to Creator status to join the leaderboard, add your channel, and compete for daily prizes!
+              </p>
+              <button
+                onClick={handleUpgradeToCreator}
+                className="btn-upgrade-creator"
+                disabled={settingsSaving}
+                style={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  border: 'none',
+                  cursor: settingsSaving ? 'not-allowed' : 'pointer',
+                  opacity: settingsSaving ? 0.7 : 1,
+                }}
+              >
+                {settingsSaving ? 'Upgrading...' : '⭐ Upgrade to Creator'}
+              </button>
+            </div>
+          )}
 
           {/* Save Settings Button */}
           <div className="profile-section">
