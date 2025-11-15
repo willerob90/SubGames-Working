@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { auth, db, functions } from './firebaseConfig';
+import { auth, db, functions, app } from './firebaseConfig';
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
@@ -9,6 +9,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { initializeMessaging, requestNotificationPermission } from './notificationService';
 
 const AuthContext = createContext();
 
@@ -24,6 +25,11 @@ export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Initialize Firebase Messaging
+  useEffect(() => {
+    initializeMessaging(app);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -86,6 +92,11 @@ export const AuthProvider = ({ children }) => {
       // Create or update user profile
       await createUserProfile(user, asCreator);
       
+      // Request notification permission after sign in
+      setTimeout(() => {
+        requestNotificationPermission(user.uid);
+      }, 2000); // Wait 2 seconds after sign-in to ask for notifications
+      
       return user;
     } catch (error) {
       console.error('Error signing in with Google:', error);
@@ -127,6 +138,11 @@ export const AuthProvider = ({ children }) => {
 
       // Create or update user profile
       await createUserProfile(user, asCreator);
+      
+      // Request notification permission after sign in
+      setTimeout(() => {
+        requestNotificationPermission(user.uid);
+      }, 2000); // Wait 2 seconds after sign-in to ask for notifications
       
       return user;
     } catch (error) {

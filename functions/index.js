@@ -773,3 +773,84 @@ exports.cleanupExpiredSessions = functions.pubsub.schedule('0 * * * *')
     console.log('Cleaned up', expiredSessions.size, 'expired sessions');
     return null;
   });
+
+// Function 7: Send Winner Notifications
+exports.sendWinnerNotifications = functions.firestore
+  .document('cycleWinners/{cycleId}')
+  .onCreate(async (snap, context) => {
+    const cycleId = context.params.cycleId;
+    const winnerData = snap.data();
+    const winnerId = winnerData.winnerId;
+    const winnerName = winnerData.winnerName;
+    const finalScore = winnerData.finalScore;
+
+    try {
+      // Get all users who participated in this cycle
+      const picksSnapshot = await db.collection('cycles')
+        .doc(cycleId)
+        .collection('picks')
+        .get();
+
+      const notifications = [];
+
+      for (const pickDoc of picksSnapshot.docs) {
+        const userId = pickDoc.id;
+        const pickData = pickDoc.data();
+        const userPickedWinner = pickData.creatorId === winnerId;
+
+        // Get user's FCM token
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists || !userDoc.data().fcmToken) {
+          continue; // Skip users without FCM token
+        }
+
+        const fcmToken = userDoc.data().fcmToken;
+
+        // Customize message based on whether they picked the winner
+        let title, body;
+        if (userPickedWinner) {
+          title = '🎉 You Picked the Winner!';
+          body = `${winnerName} won with ${finalScore} points! Great choice!`;
+        } else {
+          title = '🏆 Daily Winner Announced!';
+          body = `${winnerName} won with ${finalScore} points. Claim your pity point!`;
+        }
+
+        // Send notification
+        const message = {
+          notification: {
+            title,
+            body,
+          },
+          data: {
+            type: 'winner_announced',
+            cycleId,
+            winnerId,
+            userPickedWinner: userPickedWinner.toString()
+          },
+          token: fcmToken
+        };
+
+        notifications.push(
+          admin.messaging().send(message).catch(error => {
+            console.error('Error sending notification to', userId, ':', error);
+            // If token is invalid, remove it
+            if (error.code === 'messaging/invalid-registration-token' ||
+                error.code === 'messaging/registration-token-not-registered') {
+              return db.collection('users').doc(userId).update({
+                fcmToken: admin.firestore.FieldValue.delete()
+              });
+            }
+          })
+        );
+      }
+
+      await Promise.all(notifications);
+      console.log(`Sent ${notifications.length} winner notifications for cycle ${cycleId}`);
+      
+      return null;
+    } catch (error) {
+      console.error('Error sending winner notifications:', error);
+      return null;
+    }
+  });
