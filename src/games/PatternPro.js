@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
-const PatternPro = ({ onGameWin }) => {
+const PatternPro = ({ onGameWin, onGameStart }) => {
   const [currentLevel, setCurrentLevel] = useState(1);
   const [pattern, setPattern] = useState([]);
   const [options, setOptions] = useState([]);
@@ -9,6 +9,7 @@ const PatternPro = ({ onGameWin }) => {
   const [gameState, setGameState] = useState('intro'); // intro, playing, correct, wrong, won
   const [timeLeft, setTimeLeft] = useState(15);
   const [combo, setCombo] = useState(0);
+  const [sessionId, setSessionId] = useState(null);
 
   // Fun emoji sets for patterns
   const EMOJI_SETS = [
@@ -48,12 +49,18 @@ const PatternPro = ({ onGameWin }) => {
   }, []);
 
   // Start game
-  const startGame = useCallback(() => {
+  const startGame = useCallback(async () => {
     setCurrentLevel(1);
     setCombo(0);
     setGameState('playing');
     generatePattern(1);
-  }, [generatePattern]);
+    
+    // Create game session when starting
+    if (onGameStart) {
+      const newSessionId = await onGameStart('patternPro');
+      setSessionId(newSessionId);
+    }
+  }, [generatePattern, onGameStart]);
 
   // Timer countdown
   useEffect(() => {
@@ -89,7 +96,7 @@ const PatternPro = ({ onGameWin }) => {
       setTimeout(() => {
         if (currentLevel >= 10) {
           setGameState('won');
-          onGameWin(10); // Award 10 points
+          onGameWin(sessionId);
         } else {
           setCurrentLevel(currentLevel + 1);
           setGameState('playing');

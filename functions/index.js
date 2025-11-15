@@ -64,12 +64,12 @@ const getCycleId = (daysAgo = 0) => {
 
 // Game validation constants
 const GAME_VALIDATION = {
-  'whackAMole': { minSeconds: 5, maxSeconds: 120, points: 3 },
-  'blockBlast': { minSeconds: 10, maxSeconds: 180, points: 5 },
-  'memoryFlip': { minSeconds: 8, maxSeconds: 150, points: 6 },
-  'colorMatch': { minSeconds: 15, maxSeconds: 200, points: 8 },
-  'patternPro': { minSeconds: 20, maxSeconds: 240, points: 10 },
-  'reaction': { minSeconds: 0.2, maxSeconds: 60, points: 1 } // Fast reactions are expected!
+  'whackAMole': { minSeconds: 3, maxSeconds: 120, points: 3 },
+  'blockBlast': { minSeconds: 2, maxSeconds: 180, points: 5 },
+  'memoryFlip': { minSeconds: 5, maxSeconds: 150, points: 6 },
+  'colorMatch': { minSeconds: 8, maxSeconds: 200, points: 8 },
+  'patternPro': { minSeconds: 10, maxSeconds: 240, points: 10 },
+  'reaction': { minSeconds: 0.05, maxSeconds: 60, points: 1 } // Fast reactions are expected!
 };
 
 // Function 1: Start Game Session (Anti-cheat)

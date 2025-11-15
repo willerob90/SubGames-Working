@@ -4,23 +4,30 @@ const GRID_SIZE = 9; // 3x3 grid
 const TARGET_SCORE = 30; // Need 30 hits to win
 const MOLE_EMOJIS = ['🐭', '🐹', '🐰', '🦊', '🐻'];
 
-const WhackAMole = ({ onGameWin }) => {
+const WhackAMole = ({ onGameWin, onGameStart }) => {
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(30);
   const [activeMoles, setActiveMoles] = useState([]);
   const [gameState, setGameState] = useState('intro'); // intro, playing, won, lost
   const [lastHit, setLastHit] = useState(null);
   const [combo, setCombo] = useState(0);
+  const [sessionId, setSessionId] = useState(null);
 
   // Start game
-  const startGame = useCallback(() => {
+  const startGame = useCallback(async () => {
     setScore(0);
     setTimeLeft(30);
     setActiveMoles([]);
     setGameState('playing');
     setCombo(0);
     setLastHit(null);
-  }, []);
+    
+    // Create game session when starting
+    if (onGameStart) {
+      const newSessionId = await onGameStart('whackAMole');
+      setSessionId(newSessionId);
+    }
+  }, [onGameStart]);
 
   // Spawn moles randomly
   useEffect(() => {
@@ -71,7 +78,7 @@ const WhackAMole = ({ onGameWin }) => {
     if (timeLeft <= 0) {
       if (score >= TARGET_SCORE) {
         setGameState('won');
-        onGameWin(3); // Award 3 points
+        onGameWin(sessionId);
       } else {
         setGameState('lost');
       }

@@ -3,16 +3,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 // Card symbols - 8 pairs = 16 cards
 const SYMBOLS = ['🎮', '🎯', '🎲', '🎪', '🎨', '🎭', '🎸', '🎹'];
 
-const MemoryFlip = ({ onGameWin }) => {
+const MemoryFlip = ({ onGameWin, onGameStart }) => {
   const [cards, setCards] = useState([]);
   const [flipped, setFlipped] = useState([]);
   const [matched, setMatched] = useState([]);
   const [moves, setMoves] = useState(0);
   const [gameState, setGameState] = useState('intro'); // intro, playing, won
   const [canFlip, setCanFlip] = useState(true);
+  const [sessionId, setSessionId] = useState(null);
 
   // Initialize/shuffle cards
-  const initializeGame = useCallback(() => {
+  const initializeGame = useCallback(async () => {
     const cardPairs = [...SYMBOLS, ...SYMBOLS];
     const shuffled = cardPairs
       .map((symbol, index) => ({ id: index, symbol, matched: false }))
@@ -23,7 +24,13 @@ const MemoryFlip = ({ onGameWin }) => {
     setMoves(0);
     setGameState('playing');
     setCanFlip(true);
-  }, []);
+    
+    // Create game session when starting
+    if (onGameStart) {
+      const newSessionId = await onGameStart('memoryFlip');
+      setSessionId(newSessionId);
+    }
+  }, [onGameStart]);
 
   // Handle card click
   const handleCardClick = (index) => {
@@ -59,9 +66,9 @@ const MemoryFlip = ({ onGameWin }) => {
   useEffect(() => {
     if (matched.length === cards.length && cards.length > 0 && gameState === 'playing') {
       setGameState('won');
-      onGameWin(6); // Award 6 points
+      onGameWin(sessionId); // Pass sessionId instead of points
     }
-  }, [matched, cards.length, gameState, onGameWin]);
+  }, [matched, cards.length, gameState, onGameWin, sessionId]);
 
   return (
     <div className="flex flex-col items-center space-y-4 md:space-y-6 p-2 md:p-4">

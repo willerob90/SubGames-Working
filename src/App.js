@@ -409,7 +409,7 @@ const MainApp = () => {
 
 
   // Handle Block Blast game win
-  const handleBlockBlastWin = useCallback(async (finalScore) => {
+  const handleBlockBlastWin = useCallback(async (sessionId) => {
     if (!user) {
       console.log('Cannot award points - user not logged in');
       return;
@@ -420,25 +420,21 @@ const MainApp = () => {
       return;
     }
 
+    if (!sessionId) {
+      console.error('No session ID provided');
+      return;
+    }
+
     // Show points immediately (optimistic update)
     showPointsEarned(5);
 
     try {
-      console.log('🎮 Block Blast Win! Creating session and submitting result...');
-      
-      // Create a game session
-      const startGameSession = httpsCallable(functions, 'startGameSession');
-      const sessionResult = await startGameSession({
-        gameType: 'blockBlast',
-        difficulty: 'standard'
-      });
-
-      console.log('Session created:', sessionResult.data.sessionId);
+      console.log('🎮 Block Blast Win! Submitting result...');
 
       // Submit the game result
       const submitGameResult = httpsCallable(functions, 'submitGameResult');
       const result = await submitGameResult({
-        sessionId: sessionResult.data.sessionId,
+        sessionId,
         timeTaken: 0
       });
 
@@ -460,7 +456,7 @@ const MainApp = () => {
   }, [user, selectedCreator, creators, showPointsEarned]);
 
   // Handle Color Match game win
-  const handleColorMatchWin = useCallback(async (level) => {
+  const handleColorMatchWin = useCallback(async (sessionId) => {
     if (!user) {
       console.log('Cannot award points - user not logged in');
       return;
@@ -471,25 +467,21 @@ const MainApp = () => {
       return;
     }
 
+    if (!sessionId) {
+      console.error('No session ID provided');
+      return;
+    }
+
     // Show points immediately (optimistic update)
     showPointsEarned(8);
 
     try {
-      console.log('🎨 Color Match Win! Creating session and submitting result...');
-      
-      // Create a game session
-      const startGameSession = httpsCallable(functions, 'startGameSession');
-      const sessionResult = await startGameSession({
-        gameType: 'colorMatch',
-        difficulty: 'standard'
-      });
-
-      console.log('Session created:', sessionResult.data.sessionId);
+      console.log('🎨 Color Match Win! Submitting result...');
 
       // Submit the game result
       const submitGameResult = httpsCallable(functions, 'submitGameResult');
       const result = await submitGameResult({
-        sessionId: sessionResult.data.sessionId,
+        sessionId,
         timeTaken: 0
       });
 
@@ -510,8 +502,34 @@ const MainApp = () => {
     }
   }, [user, selectedCreator, creators, showPointsEarned]);
 
+  // Handle game start - create session
+  const handleGameStart = useCallback(async (gameType) => {
+    if (!user) {
+      console.log('Cannot start game - user not logged in');
+      return null;
+    }
+
+    if (!selectedCreator) {
+      return null; // Will show alert on win if no creator selected
+    }
+
+    try {
+      console.log(`� Starting ${gameType} game - creating session...`);
+      const startGameSession = httpsCallable(functions, 'startGameSession');
+      const sessionResult = await startGameSession({
+        gameType,
+        difficulty: 'standard'
+      });
+      console.log('Session created:', sessionResult.data.sessionId);
+      return sessionResult.data.sessionId;
+    } catch (error) {
+      console.error('Error creating game session:', error);
+      return null;
+    }
+  }, [user, selectedCreator]);
+
   // Handle Memory Flip game win
-  const handleMemoryFlipWin = useCallback(async (points) => {
+  const handleMemoryFlipWin = useCallback(async (sessionId) => {
     if (!user) {
       console.log('Cannot award points - user not logged in');
       return;
@@ -522,25 +540,21 @@ const MainApp = () => {
       return;
     }
 
+    if (!sessionId) {
+      console.error('No session ID provided');
+      return;
+    }
+
     // Show points immediately (optimistic update)
     showPointsEarned(6);
 
     try {
-      console.log('🃏 Memory Flip Win! Creating session and submitting result...');
-      
-      // Create a game session
-      const startGameSession = httpsCallable(functions, 'startGameSession');
-      const sessionResult = await startGameSession({
-        gameType: 'memoryFlip',
-        difficulty: 'standard'
-      });
-
-      console.log('Session created:', sessionResult.data.sessionId);
+      console.log('🃏 Memory Flip Win! Submitting result...');
 
       // Submit the game result
       const submitGameResult = httpsCallable(functions, 'submitGameResult');
       const result = await submitGameResult({
-        sessionId: sessionResult.data.sessionId,
+        sessionId,
         timeTaken: 0
       });
 
@@ -562,7 +576,8 @@ const MainApp = () => {
   }, [user, selectedCreator, creators, showPointsEarned]);
 
   // Handle Pattern Pro game win
-  const handlePatternProWin = useCallback(async (points) => {
+  // Handle Pattern Pro game win
+  const handlePatternProWin = useCallback(async (sessionId) => {
     if (!user) {
       console.log('Cannot award points - user not logged in');
       return;
@@ -573,25 +588,21 @@ const MainApp = () => {
       return;
     }
 
+    if (!sessionId) {
+      console.error('No session ID provided');
+      return;
+    }
+
     // Show points immediately (optimistic update)
     showPointsEarned(10);
 
     try {
-      console.log('🧩 Pattern Pro Win! Creating session and submitting result...');
-      
-      // Create a game session
-      const startGameSession = httpsCallable(functions, 'startGameSession');
-      const sessionResult = await startGameSession({
-        gameType: 'patternPro',
-        difficulty: 'standard'
-      });
-
-      console.log('Session created:', sessionResult.data.sessionId);
+      console.log('🧩 Pattern Pro Win! Submitting result...');
 
       // Submit the game result
       const submitGameResult = httpsCallable(functions, 'submitGameResult');
       const result = await submitGameResult({
-        sessionId: sessionResult.data.sessionId,
+        sessionId,
         timeTaken: 0
       });
 
@@ -613,8 +624,7 @@ const MainApp = () => {
   }, [user, selectedCreator, creators, showPointsEarned]);
 
   // Handle Whack-a-Mole game win
-  // Handle Whack-a-Mole game win
-  const handleWhackAMoleWin = useCallback(async (points) => {
+  const handleWhackAMoleWin = useCallback(async (sessionId) => {
     if (!user) {
       console.log('Cannot award points - user not logged in');
       return;
@@ -625,25 +635,21 @@ const MainApp = () => {
       return;
     }
 
+    if (!sessionId) {
+      console.error('No session ID provided');
+      return;
+    }
+
     // Show points immediately (optimistic update)
     showPointsEarned(3);
 
     try {
-      console.log('🎪 Whack-a-Mole Win! Creating session and submitting result...');
-      
-      // Create a game session
-      const startGameSession = httpsCallable(functions, 'startGameSession');
-      const sessionResult = await startGameSession({
-        gameType: 'whackAMole',
-        difficulty: 'standard'
-      });
-
-      console.log('Session created:', sessionResult.data.sessionId);
+      console.log('🎪 Whack-a-Mole Win! Submitting result...');
 
       // Submit the game result
       const submitGameResult = httpsCallable(functions, 'submitGameResult');
       const result = await submitGameResult({
-        sessionId: sessionResult.data.sessionId,
+        sessionId,
         timeTaken: 0
       });
 
@@ -675,7 +681,7 @@ const MainApp = () => {
           >
             ← Back to Games
           </button>
-          <BlockBlast onGameWin={handleBlockBlastWin} />
+          <BlockBlast onGameWin={handleBlockBlastWin} onGameStart={handleGameStart} />
         </div>
       );
     }
@@ -689,7 +695,7 @@ const MainApp = () => {
           >
             ← Back to Games
           </button>
-          <ColorMatch onGameWin={handleColorMatchWin} />
+          <ColorMatch onGameWin={handleColorMatchWin} onGameStart={handleGameStart} />
         </div>
       );
     }
@@ -703,7 +709,7 @@ const MainApp = () => {
           >
             ← Back to Games
           </button>
-          <MemoryFlip onGameWin={handleMemoryFlipWin} />
+          <MemoryFlip onGameWin={handleMemoryFlipWin} onGameStart={handleGameStart} />
         </div>
       );
     }
@@ -717,7 +723,7 @@ const MainApp = () => {
           >
             ← Back to Games
           </button>
-          <PatternPro onGameWin={handlePatternProWin} />
+          <PatternPro onGameWin={handlePatternProWin} onGameStart={handleGameStart} />
         </div>
       );
     }
@@ -731,7 +737,7 @@ const MainApp = () => {
           >
             ← Back to Games
           </button>
-          <WhackAMole onGameWin={handleWhackAMoleWin} />
+          <WhackAMole onGameWin={handleWhackAMoleWin} onGameStart={handleGameStart} />
         </div>
       );
     }
@@ -897,7 +903,7 @@ const MainApp = () => {
         </div>
       </div>
     );
-  }, [selectedGame, reactionTestState, reactionTime, startReactionTest, handleReactionClick, handleBlockBlastWin, handleColorMatchWin, handleMemoryFlipWin, handlePatternProWin, handleWhackAMoleWin, selectedCreator, userProfile]);
+  }, [selectedGame, reactionTestState, reactionTime, startReactionTest, handleReactionClick, handleBlockBlastWin, handleColorMatchWin, handleMemoryFlipWin, handlePatternProWin, handleWhackAMoleWin, handleGameStart, selectedCreator, userProfile]);
 
   // --- CREATOR HUB LOGIC ---
 

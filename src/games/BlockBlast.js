@@ -30,7 +30,7 @@ const BLOCK_SHAPES = [
   [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
 ];
 
-const BlockBlast = ({ onGameWin }) => {
+const BlockBlast = ({ onGameWin, onGameStart }) => {
   const [grid, setGrid] = useState(() => Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(0)));
   const [score, setScore] = useState(0);
   const [currentBlocks, setCurrentBlocks] = useState([]);
@@ -41,6 +41,8 @@ const BlockBlast = ({ onGameWin }) => {
   const [gameOver, setGameOver] = useState(false);
   const [hasWon, setHasWon] = useState(false);
   const [explosions, setExplosions] = useState([]); // Track explosion animations
+  const [sessionId, setSessionId] = useState(null);
+  const [gameStarted, setGameStarted] = useState(false);
 
   // Generate 3 random blocks
   const generateBlocks = useCallback(() => {
@@ -52,10 +54,20 @@ const BlockBlast = ({ onGameWin }) => {
     return blocks;
   }, []);
 
-  // Initialize blocks
+  // Initialize blocks and create session
   useEffect(() => {
-    setCurrentBlocks(generateBlocks());
-  }, [generateBlocks]);
+    if (!gameStarted) {
+      setCurrentBlocks(generateBlocks());
+      setGameStarted(true);
+      
+      // Create game session when game loads
+      if (onGameStart) {
+        onGameStart('blockBlast').then(newSessionId => {
+          setSessionId(newSessionId);
+        });
+      }
+    }
+  }, [generateBlocks, onGameStart, gameStarted]);
 
   // Check if a block can be placed at position
   const canPlaceBlock = useCallback((block, row, col) => {
@@ -163,7 +175,7 @@ const BlockBlast = ({ onGameWin }) => {
     // Check for win condition (score >= 100) - only award once
     if (newScore >= 100 && !hasWon && onGameWin) {
       setHasWon(true);
-      onGameWin(newScore);
+      onGameWin(sessionId);
     }
 
     // Remove used block

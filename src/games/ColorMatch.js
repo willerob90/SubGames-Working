@@ -7,12 +7,13 @@ const COLORS = [
   { id: 'yellow', bg: 'bg-yellow-500', hover: 'hover:bg-yellow-400', active: 'bg-yellow-300', sound: 659.25 },
 ];
 
-const ColorMatch = ({ onGameWin }) => {
+const ColorMatch = ({ onGameWin, onGameStart }) => {
   const [sequence, setSequence] = useState([]);
   const [playerSequence, setPlayerSequence] = useState([]);
   const [level, setLevel] = useState(1);
   const [gameState, setGameState] = useState('intro'); // intro, showing, player-turn, correct, wrong, won
   const [activeColor, setActiveColor] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const audioContext = useRef(null);
 
   // Initialize Web Audio API
@@ -65,14 +66,20 @@ const ColorMatch = ({ onGameWin }) => {
   }, [playTone]);
 
   // Start new game
-  const startGame = useCallback(() => {
+  const startGame = useCallback(async () => {
     const newSequence = [COLORS[Math.floor(Math.random() * COLORS.length)].id];
     setSequence(newSequence);
     setPlayerSequence([]);
     setLevel(1);
     setGameState('showing');
     showSequence(newSequence);
-  }, [showSequence]);
+    
+    // Create game session when starting
+    if (onGameStart) {
+      const newSessionId = await onGameStart('colorMatch');
+      setSessionId(newSessionId);
+    }
+  }, [showSequence, onGameStart]);
 
   // Handle player clicking a color
   const handleColorClick = useCallback((colorId) => {
@@ -102,7 +109,7 @@ const ColorMatch = ({ onGameWin }) => {
         // Player won the game!
         setGameState('won');
         if (onGameWin) {
-          onGameWin(level);
+          onGameWin(sessionId);
         }
       } else {
         // Move to next level
