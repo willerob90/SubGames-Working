@@ -69,35 +69,44 @@ function CreatorOnboarding({ onComplete }) {
       return;
     }
 
+    // Auto-add https:// if missing
+    let validUrl = channelUrl.trim();
+    if (!validUrl.startsWith('http://') && !validUrl.startsWith('https://')) {
+      validUrl = 'https://' + validUrl;
+    }
+
+    // Update the channel URL with the corrected version
+    setChannelUrl(validUrl);
+
     // Basic URL validation
     const urlPattern = /^https?:\/\/.+/i;
-    if (!urlPattern.test(channelUrl)) {
-      setError('Please enter a valid URL (starting with http:// or https://)');
+    if (!urlPattern.test(validUrl)) {
+      setError('Please enter a valid URL');
       setLoading(false);
       return;
     }
 
     // Extract platform from URL
     let detectedPlatform = '';
-    if (channelUrl.includes('youtube.com') || channelUrl.includes('youtu.be')) {
+    if (validUrl.includes('youtube.com') || validUrl.includes('youtu.be')) {
       detectedPlatform = 'YouTube';
       
       // Fetch YouTube channel data
-      const channelData = await fetchYouTubeChannelData(channelUrl);
+      const channelData = await fetchYouTubeChannelData(validUrl);
       if (channelData) {
         setYoutubeChannelData(channelData);
       }
-    } else if (channelUrl.includes('twitch.tv')) {
+    } else if (validUrl.includes('twitch.tv')) {
       detectedPlatform = 'Twitch';
       
       // Fetch Twitch channel data
-      const channelData = await fetchTwitchChannelData(channelUrl);
+      const channelData = await fetchTwitchChannelData(validUrl);
       if (channelData) {
         setYoutubeChannelData(channelData); // Reuse the same state variable
       }
-    } else if (channelUrl.includes('kick.com')) {
+    } else if (validUrl.includes('kick.com')) {
       detectedPlatform = 'Kick';
-    } else if (channelUrl.includes('tiktok.com')) {
+    } else if (validUrl.includes('tiktok.com')) {
       detectedPlatform = 'TikTok';
     }
     

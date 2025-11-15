@@ -13,22 +13,34 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
+    // Helper function to check if user is upgrading to creator (allowed)
+    function isUpgradingToCreator() {
+      return request.resource.data.accountType == 'creator' 
+          && request.resource.data.isCreator == true
+          && (resource.data.accountType == 'player' || !('accountType' in resource.data));
+    }
+    
     // User profiles - anyone can read, only owners can write (with restrictions)
     match /users/{userId} {
       allow read: if true; // Anyone can read public profiles
       allow create: if isAuthenticated() && request.auth.uid == userId;
-      // Prevent users from modifying protected fields
+      // Prevent users from modifying protected fields, except upgrading to creator
       allow update: if isAuthenticated() 
                     && request.auth.uid == userId
-                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-                      'totalPointsEarned', 
-                      'totalGamesPlayed', 
-                      'totalGamesWon', 
-                      'accountType', 
-                      'isCreator',
-                      'uid',
-                      'createdAt'
-                    ]);
+                    && (
+                      // Allow upgrade to creator
+                      isUpgradingToCreator()
+                      // Or regular update without touching protected fields
+                      || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                        'totalPointsEarned', 
+                        'totalGamesPlayed', 
+                        'totalGamesWon', 
+                        'accountType', 
+                        'isCreator',
+                        'uid',
+                        'createdAt'
+                      ])
+                    );
       allow delete: if isOwner(userId);
     }
     
@@ -37,7 +49,10 @@ service cloud.firestore {
       // Leaderboard - anyone can read
       match /leaderboard/{creatorId} {
         allow read: if true;
-        allow write: if false; // Only Cloud Functions can write
+        // Allow creators to create their own entry during onboarding
+        allow create: if isAuthenticated() && request.auth.uid == creatorId;
+        // Only Cloud Functions can update/delete
+        allow update, delete: if false;
       }
       
       // Picks - users can read their own, create once, but cannot update/switch
